@@ -451,7 +451,13 @@ function QualityField({ concept }) {
   );
 }
 
-function ConceptCard({ concept }) {
+function ConceptCard({
+  concept,
+  refreshFeedback,
+  onRefreshFeedbackChange,
+  onRefresh,
+  refreshing,
+}) {
   if (!concept) return null;
 
   const statementIsDifferent =
@@ -559,6 +565,23 @@ function ConceptCard({ concept }) {
         />
 
         <QualityField concept={concept} />
+
+        <CollapsibleField title="Refresh feedback" defaultOpen={false}>
+          <textarea
+            className="refresh-feedback"
+            value={refreshFeedback || ""}
+            onChange={(event) => onRefreshFeedbackChange?.(event.target.value)}
+            placeholder="Edit or add feedback for regenerating this concept card..."
+          />
+
+          <button
+            className="mini-refresh-button"
+            onClick={onRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? "Refreshing..." : "Refresh concept card"}
+          </button>
+        </CollapsibleField>
       </div>
     </div>
   );
