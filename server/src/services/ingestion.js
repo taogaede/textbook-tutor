@@ -949,10 +949,56 @@ Rules:
 - hierarchyPath should be conceptual, not chapter-based or page-based.
 - Preserve useful TeX notation.
 - keyNotation should contain compact notation snippets when possible.
+- The "references" field must contain human-readable textbook locations only, such as section titles, chapter titles, theorem labels, definition labels, example labels, or exercise labels.
+- Do not put internal evidence chunk IDs such as "source-0001", "source-0002", or similar source IDs in "references".
+- Internal evidence chunk IDs are stored separately by the application and should not be shown to students.
 - Because this is JSON, every TeX backslash must be escaped as a double backslash.
 - Return strictly valid JSON parseable by JSON.parse.
 - Use empty strings or empty arrays for unsupported fields.
 `;
+
+function isInternalSourceChunkId(value) {
+  return /^source-\d+$/i.test(String(value || "").trim());
+}
+
+function normalizeUserFacingReferences(value, fallbackSections = [], limit = 10) {
+  const rawReferences = Array.isArray(value) ? value : [];
+
+  const cleaned = rawReferences
+    .map(String)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => !isInternalSourceChunkId(item))
+    .filter((item) => !/^chunk-\d+$/i.test(item))
+    .filter((item) => !/^source excerpt \d+$/i.test(item));
+
+  const fallback = Array.isArray(fallbackSections)
+    ? fallbackSections
+        .map(String)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item) => !isInternalSourceChunkId(item))
+    : [];
+
+  const combined = [...cleaned, ...fallback];
+  const seen = new Set();
+  const deduped = [];
+
+  for (const item of combined) {
+    const key = item.toLowerCase();
+
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduped.push(item);
+    }
+
+    if (deduped.length >= limit) {
+      break;
+    }
+  }
+
+  return deduped;
+}
 
 function normalizeCanonicalConceptCard({
   raw,
@@ -968,13 +1014,18 @@ function normalizeCanonicalConceptCard({
     canonicalConcept.hierarchyPath || ["Concept Map"]
   );
 
-  const references = normalizeStringArray(raw?.references, 10);
   const evidenceReferences = evidenceChunks
     .map((chunk) => chunk.sectionTitle)
     .filter(Boolean);
 
   const sourceChunkIds = evidenceChunks.map((chunk) => chunk.id);
   const sourceSections = Array.from(new Set(evidenceReferences)).slice(0, 12);
+
+  const references = normalizeUserFacingReferences(
+    raw?.references,
+    sourceSections,
+    10
+  );
 
   return {
     id,
@@ -996,10 +1047,8 @@ function normalizeCanonicalConceptCard({
     proofIdeas: normalizeStringArray(raw?.proofIdeas, 10),
     sourceSummary: String(raw?.sourceSummary || "").trim().slice(0, 1600),
     references: references.length > 0
-      ? references
-      : sourceSections.length > 0
-        ? sourceSections
-        : canonicalConcept.references || [],
+	  ? references
+	  : normalizeUserFacingReferences(canonicalConcept.references, sourceSections, 10),
     sourceStart: evidenceChunks[0]?.index || 0,
 
     canonical: true,
@@ -1155,9 +1204,11 @@ function normalizeLLMConcept(raw, fallbackSection, number) {
     commonConfusions: Array.isArray(raw.commonConfusions)
       ? raw.commonConfusions.map(String).filter(Boolean).slice(0, 6)
       : [],
-    references: Array.isArray(raw.references)
-      ? raw.references.map(String).filter(Boolean).slice(0, 6)
-      : [String(fallbackSection.sectionTitle || "Textbook excerpt")],
+    references: normalizeUserFacingReferences(
+	  raw.references,
+	  [String(fallbackSection.sectionTitle || "Textbook excerpt")],
+	  6
+	),
     sourceSummary: String(raw.sourceSummary || "").trim().slice(0, 1200),
     sourceStart: fallbackSection.index,
 	statement: String(raw.statement || "").trim().slice(0, 1800),
