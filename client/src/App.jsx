@@ -990,7 +990,8 @@ export default function App() {
 
   const concepts = useMemo(() => flattenConcepts(textbook.sections || []), [textbook]);
   const selectedConcept = concepts.find((concept) => concept.id === selectedId) || concepts[0];
-  const workspace = workspaceByConcept[selectedId] || "";
+  const activeConceptId = selectedConcept?.id || selectedId;
+  const workspace = workspaceByConcept[activeConceptId] || "";
   const messages = messagesByConcept[selectedId] || initialMessages;
   const learningState = buildLearningState(workspace, selectedConcept);
 
@@ -1000,10 +1001,43 @@ export default function App() {
   useEffect(() => {
     if (!selectedConcept && concepts.length > 0) setSelectedId(concepts[0].id);
   }, [concepts, selectedConcept]);
+  
+  useEffect(() => {
+    if (!textbook?.id || !selectedConcept?.id) return;
+    if (textbook.id === "demo") return;
 
+    loadWorkspaceForConcept(textbook.id, selectedConcept.id);
+  }, [textbook?.id, selectedConcept?.id]);
+  
   const filteredSections = useMemo(() => {
 	return filterTreeBySearch(textbook.sections || [], search);
   }, [search, textbook]);
+
+async function loadWorkspaceForConcept(textbookId, conceptId) {
+  if (!textbookId || !conceptId) return;
+
+  if (textbookId === "demo") return;
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/workspaces/${encodeURIComponent(textbookId)}/${encodeURIComponent(conceptId)}`
+    );
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    const data = await response.json();
+
+    setWorkspaceByConcept((prev) => ({
+	  ...prev,
+	  [conceptId]: data.workspace || "",
+	}));
+  } catch (error) {
+    console.error(error);
+    setStatus(`Could not load saved workspace: ${error.message}`);
+  }
+}
 
 async function refreshSavedTextbooks() {
   setLoadingSavedTextbooks(true);
@@ -1364,7 +1398,7 @@ async function refreshConceptCard() {
     try {
       await postJson("/api/workspaces", {
         textbookId: textbook.id,
-        conceptId: selectedConcept.id,
+        conceptId: activeConceptId,
         workspace,
         learningState,
       });
@@ -1499,7 +1533,12 @@ async function refreshConceptCard() {
             <textarea
               className="workspace"
               value={workspace}
-              onChange={(e) => setWorkspaceByConcept((prev) => ({ ...prev, [selectedId]: e.target.value }))}
+              onChange={(e) =>
+			    setWorkspaceByConcept((prev) => ({
+				  ...prev,
+				  [activeConceptId]: e.target.value,
+			    }))
+			  }
               placeholder={`Explain ${selectedConcept?.title || "the selected concept"} in your own words...`}
             />
           </div>

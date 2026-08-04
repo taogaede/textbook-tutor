@@ -125,16 +125,6 @@ app.get("/api/textbooks/:id", async (req, res, next) => {
     next(error);
   }
 });
-app.get("/api/textbooks/:id", async (req, res, next) => {
-  try {
-    const id = safeId(req.params.id);
-    const file = path.join(textbookDir, id, "textbook.json");
-    const json = JSON.parse(await fs.readFile(file, "utf8"));
-    res.json(json);
-  } catch (error) {
-    next(error);
-  }
-});
 
 app.post("/api/textbooks/:textbookId/concepts/:conceptId/refresh", async (req, res, next) => {
   try {
