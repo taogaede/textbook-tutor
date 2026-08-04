@@ -14,11 +14,27 @@ Using an "expert math educator" LLM, the app ingests a textbook, extracts key co
 
 ## Tutoring dynamic
 
-The user selects a concept card from the concept hierarchy.  Each concept card has several information fields (see example below).  
+The user selects a concept card from the concept hierarchy.  Each concept card has several information fields.  The following are the currently used fields (though many will probably be removed or consolidated later):
 
-Example showing information fields in a concept card:
-
-![Alt text](images/concept-card-picture-for-readme.png)
+- Title 
+- Type 
+- Page or source label 
+- Textbook definition or excerpt
+- Statement 
+- Why this matters
+- Hierarchy path
+- Prerequisites
+- Depends on earlier in this section
+- Key notation
+- Useful examples
+- Non-examples or boundary cases
+- Common confusions
+- Proof ideas
+- Related results and nearby concepts
+- How the textbook presents it 
+- References 
+- Concept card quality 
+- Refresh feedback 
 
 The user has access to a saveable "Workspace" window in which they write out their understanding of the concept, and a "Tutor panel" in which they directly interact with the tutor-LLM.  The user can click a "Check understanding" button to cause the tutor-LLM to evaluate the content of the Workspace relative to its interpretation of the understanding of the concept intended by the original math text.  The tutor-LLM proceeds in a socratic style and encourages the user to develop their understanding in the Workspace.
 
