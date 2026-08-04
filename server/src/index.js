@@ -9,6 +9,7 @@ import {
   ingestTextbook,
   refreshConceptCard,
   refreshConceptsByQuality,
+  updateConceptCardFields,
 } from "./services/ingestion.js";
 import { makeTutorResponse } from "./services/tutor.js";
 
@@ -161,6 +162,24 @@ app.post("/api/textbooks/:textbookId/concepts/batch-refresh", async (req, res, n
       quality: req.body?.quality,
       userFeedback: req.body?.feedback || "",
       limit: req.body?.limit || 50,
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/textbooks/:textbookId/concepts/:conceptId", async (req, res, next) => {
+  try {
+    const textbookId = safeId(req.params.textbookId);
+    const conceptId = safeId(req.params.conceptId);
+
+    const result = await updateConceptCardFields({
+      textbookDir,
+      textbookId,
+      conceptId,
+      updates: req.body?.updates || {},
     });
 
     res.json(result);

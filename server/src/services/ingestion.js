@@ -1082,3 +1082,115 @@ export async function refreshConceptsByQuality({
     chunkCount: saved.chunks?.length || 0,
   };
 }
+
+function normalizeEditableArray(value, limit = 20) {
+  if (Array.isArray(value)) {
+    return value
+      .map(String)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, limit);
+  }
+
+  return [];
+}
+
+function normalizeEditableString(value, limit = 3000) {
+  return String(value || "").trim().slice(0, limit);
+}
+
+export async function updateConceptCardFields({
+  textbookDir,
+  textbookId,
+  conceptId,
+  updates,
+}) {
+  const textbookJsonPath = path.join(textbookDir, textbookId, "textbook.json");
+  const saved = JSON.parse(await fs.readFile(textbookJsonPath, "utf8"));
+
+  const oldConcept = saved.concepts.find((concept) => concept.id === conceptId);
+
+  if (!oldConcept) {
+    throw new Error(`Could not find concept ${conceptId}.`);
+  }
+
+  const allowedStringFields = new Set([
+    "title",
+    "type",
+    "section",
+    "page",
+    "definition",
+    "statement",
+    "teachingRole",
+    "sourceSummary",
+  ]);
+
+  const allowedArrayFields = new Set([
+    "hierarchyPath",
+    "prerequisites",
+    "dependsOnEarlierInExcerpt",
+    "keyNotation",
+    "examples",
+    "nonExamples",
+    "commonConfusions",
+    "proofIdeas",
+    "relatedResults",
+    "references",
+  ]);
+
+  const normalizedUpdates = {};
+
+  for (const [field, value] of Object.entries(updates || {})) {
+    if (allowedStringFields.has(field)) {
+      normalizedUpdates[field] = normalizeEditableString(value);
+    }
+
+    if (allowedArrayFields.has(field)) {
+      normalizedUpdates[field] = normalizeEditableArray(
+        value,
+        field === "hierarchyPath" ? 4 : 20
+      );
+    }
+  }
+
+  if (Object.keys(normalizedUpdates).length === 0) {
+    throw new Error("No editable concept fields were provided.");
+  }
+
+  const updatedConcept = {
+    ...oldConcept,
+    ...normalizedUpdates,
+    editedAt: new Date().toISOString(),
+  };
+
+  if (!updatedConcept.hierarchyPath?.length) {
+    updatedConcept.hierarchyPath = [
+      updatedConcept.section || oldConcept.section || "Extracted Text",
+    ];
+  }
+
+  saved.concepts = saved.concepts.map((concept) =>
+    concept.id === conceptId ? updatedConcept : concept
+  );
+
+  saved.chunks = updateChunksForConcept(saved.chunks, updatedConcept);
+
+  saved.textbook.sections = buildConceptHierarchy(saved.concepts);
+
+  await fs.writeFile(textbookJsonPath, JSON.stringify(saved, null, 2));
+
+  return {
+    concept: updatedConcept,
+    textbook: saved.textbook,
+    conceptCount: saved.concepts.length,
+    chunkCount: saved.chunks?.length || 0,
+  };
+}

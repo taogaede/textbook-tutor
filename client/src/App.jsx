@@ -378,6 +378,17 @@ function ConceptTree({ sections, selectedId, onSelect }) {
   );
 }
 
+function arrayToTextareaValue(items) {
+  return (items || []).join("\n");
+}
+
+function textareaValueToArray(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -447,6 +458,172 @@ function PillListField({ title, items, defaultOpen = false }) {
   );
 }
 
+function EditableTextField({
+  title,
+  field,
+  value,
+  defaultOpen = false,
+  onSaveField,
+  savingField,
+  placeholder = "",
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+
+  useEffect(() => {
+    if (!editing) {
+      setDraft(value || "");
+    }
+  }, [value, editing]);
+
+  const saving = savingField === field;
+
+  return (
+    <CollapsibleField title={title} defaultOpen={defaultOpen}>
+      {editing ? (
+        <>
+          <textarea
+            className="field-edit-textarea"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={placeholder}
+            disabled={saving}
+          />
+
+          <div className="field-edit-actions">
+            <button
+              className="mini-save-button"
+              onClick={async () => {
+                await onSaveField?.(field, draft);
+                setEditing(false);
+              }}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+
+            <button
+              className="mini-cancel-button"
+              onClick={() => {
+                setDraft(value || "");
+                setEditing(false);
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p>{isNonEmptyString(value) ? value : "None detected yet."}</p>
+
+          <div className="field-edit-footer">
+            <button
+              className="field-edit-button"
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </button>
+          </div>
+        </>
+      )}
+    </CollapsibleField>
+  );
+}
+
+function EditableListField({
+  title,
+  field,
+  items,
+  defaultOpen = false,
+  onSaveField,
+  savingField,
+  asPills = false,
+  placeholder = "One item per line",
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(arrayToTextareaValue(items));
+
+  useEffect(() => {
+    if (!editing) {
+      setDraft(arrayToTextareaValue(items));
+    }
+  }, [items, editing]);
+
+  const saving = savingField === field;
+  const hasItems = isNonEmptyArray(items);
+
+  return (
+    <CollapsibleField title={title} defaultOpen={defaultOpen}>
+      {editing ? (
+        <>
+          <textarea
+            className="field-edit-textarea"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={placeholder}
+            disabled={saving}
+          />
+
+          <div className="field-edit-actions">
+            <button
+              className="mini-save-button"
+              onClick={async () => {
+                await onSaveField?.(field, textareaValueToArray(draft));
+                setEditing(false);
+              }}
+              disabled={saving}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+
+            <button
+              className="mini-cancel-button"
+              onClick={() => {
+                setDraft(arrayToTextareaValue(items));
+                setEditing(false);
+              }}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          {hasItems ? (
+            asPills ? (
+              <div className="pill-row">
+                {items.map((item) => (
+                  <span key={item} className="pill">{item}</span>
+                ))}
+              </div>
+            ) : (
+              <ul>
+                {items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )
+          ) : (
+            <p className="muted">None detected yet.</p>
+          )}
+
+          <div className="field-edit-footer">
+            <button
+              className="field-edit-button"
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </button>
+          </div>
+        </>
+      )}
+    </CollapsibleField>
+  );
+}
+
 function QualityField({ concept }) {
   const hasQuality =
     concept.quality ||
@@ -492,6 +669,8 @@ function ConceptCard({
   onRefreshFeedbackChange,
   onRefresh,
   refreshing,
+  onSaveField,
+  savingField,
 }) {
   if (!concept) return null;
 
@@ -515,89 +694,172 @@ function ConceptCard({
             {concept.hierarchyPath.join(" › ")}
           </div>
         )}
+		<EditableTextField
+		  title="Title"
+		  field="title"
+		  value={concept.title || ""}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  placeholder="Enter the concept title..."
+		/>
 
-        <TextField
-          title="Textbook definition or excerpt"
-          value={
-            concept.definition ||
-            "No definition was extracted. Use the source excerpt and tutor panel to refine this concept."
-          }
-          defaultOpen={true}
-        />
+		<EditableTextField
+		  title="Type"
+		  field="type"
+		  value={concept.type || ""}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  placeholder="Definition, Theorem, Example, Exercise, Concept, Technique..."
+		/>
+
+		<EditableTextField
+		  title="Page or source label"
+		  field="page"
+		  value={concept.page || ""}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  placeholder="Enter source label, page, section, or reference..."
+		/>
+
+        <EditableTextField
+		  title="Textbook definition or excerpt"
+		  field="definition"
+		  value={concept.definition || ""}
+		  defaultOpen={true}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  placeholder="Enter the textbook-grounded definition or excerpt..."
+		/>
 
         {statementIsDifferent && (
-          <TextField
-            title="Statement"
-            value={concept.statement}
-            defaultOpen={true}
-          />
-        )}
+		  <EditableTextField
+			title="Statement"
+			field="statement"
+			value={concept.statement || ""}
+			defaultOpen={true}
+			onSaveField={onSaveField}
+			savingField={savingField}
+			placeholder="Enter the theorem, proposition, exercise, or question statement..."
+		  />
+		)}
 
-        <TextField
-          title="Why this matters"
-          value={concept.teachingRole}
-          defaultOpen={false}
-        />
+		<EditableTextField
+		  title="Why this matters"
+		  field="teachingRole"
+		  value={concept.teachingRole || ""}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  placeholder="Explain why this concept matters instructionally..."
+		/>
 
-        <PillListField
-          title="Prerequisites"
-          items={concept.prerequisites || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Hierarchy path"
+		  field="hierarchyPath"
+		  items={concept.hierarchyPath || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  asPills={true}
+		  placeholder="One hierarchy label per line, up to 4 labels"
+		/>
 
-        <PillListField
-          title="Depends on earlier in this section"
-          items={concept.dependsOnEarlierInExcerpt || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Prerequisites"
+		  field="prerequisites"
+		  items={concept.prerequisites || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  asPills={true}
+		/>
 
-        <PillListField
-          title="Key notation"
-          items={concept.keyNotation || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Depends on earlier in this section"
+		  field="dependsOnEarlierInExcerpt"
+		  items={concept.dependsOnEarlierInExcerpt || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  asPills={true}
+		/>
 
-        <ListField
-          title="Useful examples"
-          items={concept.examples || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Key notation"
+		  field="keyNotation"
+		  items={concept.keyNotation || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  asPills={true}
+		/>
 
-        <ListField
-          title="Non-examples or boundary cases"
-          items={concept.nonExamples || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Useful examples"
+		  field="examples"
+		  items={concept.examples || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		/>
 
-        <ListField
-          title="Common confusions"
-          items={concept.commonConfusions || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Non-examples or boundary cases"
+		  field="nonExamples"
+		  items={concept.nonExamples || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		/>
 
-        <ListField
-          title="Proof ideas"
-          items={concept.proofIdeas || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Common confusions"
+		  field="commonConfusions"
+		  items={concept.commonConfusions || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		/>
 
-        <ListField
-          title="Related results and nearby concepts"
-          items={concept.relatedResults || []}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Proof ideas"
+		  field="proofIdeas"
+		  items={concept.proofIdeas || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		/>
 
-        <TextField
-          title="How the textbook presents it"
-          value={concept.sourceSummary}
-          defaultOpen={false}
-        />
+		<EditableListField
+		  title="Related results and nearby concepts"
+		  field="relatedResults"
+		  items={concept.relatedResults || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		/>
 
-        <ListField
-          title="References"
-          items={concept.references || []}
-          defaultOpen={false}
-        />
+		<EditableTextField
+		  title="How the textbook presents it"
+		  field="sourceSummary"
+		  value={concept.sourceSummary || ""}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		  placeholder="Summarize how the textbook presents this concept..."
+		/>
+
+		<EditableListField
+		  title="References"
+		  field="references"
+		  items={concept.references || []}
+		  defaultOpen={false}
+		  onSaveField={onSaveField}
+		  savingField={savingField}
+		/>
 
         <QualityField concept={concept} />
 
@@ -634,11 +896,13 @@ export default function App() {
   const [status, setStatus] = useState("Demo mode. Upload a .tex, .txt, or .pdf textbook to use your own material.");
   const [refreshingConceptId, setRefreshingConceptId] = useState(null);
   const [refreshFeedbackByConcept, setRefreshFeedbackByConcept] = useState({});
+  const [savingConceptField, setSavingConceptField] = useState(null);
   const [loadingTutor, setLoadingTutor] = useState(false);
   const [batchRefreshQuality, setBatchRefreshQuality] = useState("2");
   const [batchRefreshFeedback, setBatchRefreshFeedback] = useState("");
   const [batchRefreshLimit, setBatchRefreshLimit] = useState(50);
   const [batchRefreshing, setBatchRefreshing] = useState(false);
+  
 
   const concepts = useMemo(() => flattenConcepts(textbook.sections || []), [textbook]);
   const selectedConcept = concepts.find((concept) => concept.id === selectedId) || concepts[0];
@@ -825,6 +1089,51 @@ async function loadSavedTextbook(textbookId) {
       setInput("");
     }
   }
+
+async function saveConceptField(field, value) {
+  if (!textbook?.id || !selectedConcept?.id) return;
+
+  if (textbook.id === "demo") {
+    setStatus("Demo concepts cannot be edited. Upload or load a textbook first.");
+    return;
+  }
+
+  setSavingConceptField(field);
+  setStatus(`Saving ${field} for ${selectedConcept.title}...`);
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/textbooks/${encodeURIComponent(textbook.id)}/concepts/${encodeURIComponent(selectedConcept.id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          updates: {
+            value,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    const data = await response.json();
+
+    setTextbook(data.textbook);
+    setSelectedId(data.concept.id);
+
+    setStatus(`Saved ${field} for ${data.concept.title}.`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Save failed: ${error.message}`);
+    throw error;
+  } finally {
+    setSavingConceptField(null);
+  }
+}
+
 
 async function refreshConceptCard() {
   if (!textbook?.id || !selectedConcept?.id) return;
@@ -1013,20 +1322,22 @@ async function refreshConceptCard() {
             />
           </div>
           <ConceptCard
-		  concept={selectedConcept}
-		  refreshFeedback={
-			refreshFeedbackByConcept[selectedConcept?.id] ??
-			buildDefaultRefreshFeedback(selectedConcept)
-		  }
-		  onRefreshFeedbackChange={(value) =>
-			setRefreshFeedbackByConcept((prev) => ({
-			  ...prev,
-			  [selectedConcept.id]: value,
-			}))
-		  }
-		  onRefresh={refreshConceptCard}
-		  refreshing={refreshingConceptId === selectedConcept?.id}
-		/>
+			  concept={selectedConcept}
+			  refreshFeedback={
+				refreshFeedbackByConcept[selectedConcept?.id] ??
+				buildDefaultRefreshFeedback(selectedConcept)
+			  }
+			  onRefreshFeedbackChange={(value) =>
+				setRefreshFeedbackByConcept((prev) => ({
+				  ...prev,
+				  [selectedConcept.id]: value,
+				}))
+			  }
+			  onRefresh={refreshConceptCard}
+			  refreshing={refreshingConceptId === selectedConcept?.id}
+			  onSaveField={saveConceptField}
+			  savingField={savingConceptField}
+			/>
         </section>
 
         <section className="tutor-column">

@@ -378,6 +378,74 @@ p { line-height: 1.5; }
   *ont-style: italic;
 }
 
+.field-edit-textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 10px 11px;
+  outline: none;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #334155;
+  background: #ffffff;
+}
+
+.field-edit-textarea:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px #c7d2fe;
+}
+
+.field-edit-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.field-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.field-edit-button,
+.mini-save-button,
+.mini-cancel-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.field-edit-button {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.field-edit-button:hover {
+  background: #e2e8f0;
+}
+
+.mini-save-button {
+  background: #4f46e5;
+  color: white;
+}
+
+.mini-save-button:hover {
+  background: #4338ca;
+}
+
+.mini-cancel-button {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.mini-cancel-button:hover {
+  background: #e2e8f0;
+}
 
 .workspace-column, .tutor-column { display: grid; gap: 16px; align-content: start; }
 .concept-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 14px; }
