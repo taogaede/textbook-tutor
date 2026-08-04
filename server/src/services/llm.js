@@ -118,13 +118,72 @@ function extractJsonCandidate(text) {
   return trimmed;
 }
 
-function repairInvalidBackslashes(jsonText) {
-  return String(jsonText)
-    // Valid JSON escapes are: \" \\ \/ \b \f \n \r \t \uXXXX
-    // This doubles any backslash that is not part of a valid JSON escape.
-    .replace(/\\(?!["\\/bfnrtu])/g, "\\\\")
-    // Remove raw control characters.
-    .replace(/[\u0000-\u001F]+/g, " ");
+function repairTexBackslashesInJsonStrings(jsonText) {
+  const text = String(jsonText || "");
+  let output = "";
+  let inString = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === '"') {
+      let slashCount = 0;
+      let j = i - 1;
+
+      while (j >= 0 && text[j] === "\\") {
+        slashCount += 1;
+        j -= 1;
+      }
+
+      if (slashCount % 2 === 0) {
+        inString = !inString;
+      }
+
+      output += char;
+      continue;
+    }
+
+    if (!inString || char !== "\\") {
+      output += char;
+      continue;
+    }
+
+    let slashCount = 0;
+
+    while (text[i + slashCount] === "\\") {
+      slashCount += 1;
+    }
+
+    const nextChar = text[i + slashCount] || "";
+    const afterNextChar = text[i + slashCount + 1] || "";
+
+    const looksLikeTexCommand =
+      /[A-Za-z]/.test(nextChar) ||
+      ["(", ")", "[", "]", "{", "}", ",", ";", ":", "!", "|"].includes(nextChar);
+
+    const looksLikeJsonUnicodeEscape =
+      nextChar === "u" &&
+      /^[0-9a-fA-F]{4}$/.test(text.slice(i + slashCount + 1, i + slashCount + 5));
+
+    const looksLikeShortJsonEscape =
+      ["b", "f", "n", "r", "t"].includes(nextChar) &&
+      !/[A-Za-z]/.test(afterNextChar);
+
+    if (
+      slashCount % 2 === 1 &&
+      looksLikeTexCommand &&
+      !looksLikeJsonUnicodeEscape &&
+      !looksLikeShortJsonEscape
+    ) {
+      output += "\\".repeat(slashCount + 1);
+    } else {
+      output += "\\".repeat(slashCount);
+    }
+
+    i += slashCount - 1;
+  }
+
+  return output.replace(/[\u0000-\u001F]+/g, " ");
 }
 
 export function parseJsonFromLLM(text) {
@@ -134,26 +193,27 @@ export function parseJsonFromLLM(text) {
 
   const candidate = extractJsonCandidate(text);
 
-  // Attempt 1: direct parse.
+  // Important: repair TeX backslashes before the first JSON.parse.
+  // Otherwise JSON.parse can silently turn "\theta" into a tab plus "heta".
+  const texBackslashRepaired = repairTexBackslashesInJsonStrings(candidate);
+
+  // Attempt 1: parse the TeX-repaired candidate first.
   try {
-    return JSON.parse(candidate);
+    return JSON.parse(texBackslashRepaired);
   } catch (firstError) {
     // Continue.
   }
 
-  // Attempt 2: repair bad LaTeX backslashes.
-  const backslashRepaired = repairInvalidBackslashes(candidate);
-
+  // Attempt 2: use jsonrepair after TeX backslash repair.
   try {
-    return JSON.parse(backslashRepaired);
+    return JSON.parse(jsonrepair(texBackslashRepaired));
   } catch (secondError) {
     // Continue.
   }
 
-  // Attempt 3: use jsonrepair for missing commas, trailing commas,
-  // quote problems, unescaped newlines, and similar common issues.
+  // Attempt 3: fall back to the original candidate.
   try {
-    return JSON.parse(jsonrepair(backslashRepaired));
+    return JSON.parse(candidate);
   } catch (thirdError) {
     throw new Error(
       [
