@@ -512,6 +512,51 @@ p { line-height: 1.5; }
   cursor: not-allowed;
 }
 
+.key-notation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.key-notation-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.key-notation-rendered,
+.key-notation-source {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.key-notation-rendered {
+  margin-bottom: 6px;
+}
+
+.key-notation-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  min-width: 64px;
+}
+
+.key-notation-source code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.85rem;
+  background: #e2e8f0;
+  color: #0f172a;
+  border-radius: 8px;
+  padding: 3px 6px;
+  overflow-wrap: anywhere;
+}
+
+
 .workspace-column, .tutor-column { display: grid; gap: 16px; align-content: start; }
 .concept-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 14px; }
 .main-title { font-size: 1.15rem; }

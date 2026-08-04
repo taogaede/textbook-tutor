@@ -382,6 +382,24 @@ function normalizeTutorMessageText(text) {
   return raw;
 }
 
+function KeyNotationItem({ item }) {
+  const latex = String(item || "").trim();
+
+  return (
+    <div className="key-notation-item">
+      <div className="key-notation-rendered">
+        <span className="key-notation-label">Rendered</span>
+        <TypesetText>{notationToMathText(latex)}</TypesetText>
+      </div>
+
+      <div className="key-notation-source">
+        <span className="key-notation-label">LaTeX</span>
+        <code>{latex}</code>
+      </div>
+    </div>
+  );
+}
+
 function TypesetText({ children, className = "" }) {
   return (
     <MathJax dynamic>
@@ -504,6 +522,22 @@ function isNonEmptyString(value) {
 
 function isNonEmptyArray(value) {
   return Array.isArray(value) && value.length > 0;
+}
+
+function notationToMathText(value) {
+  const text = String(value || "").trim();
+
+  if (!text) return "";
+
+  const alreadyDelimited =
+    text.includes("\\(") ||
+    text.includes("\\)") ||
+    text.includes("\\[") ||
+    text.includes("\\]") ||
+    text.includes("$$") ||
+    text.includes("$");
+
+  return alreadyDelimited ? text : `\\(${text}\\)`;
 }
 
 function CollapsibleField({ title, children, defaultOpen = false }) {
@@ -730,26 +764,34 @@ function EditableListField({
 		  </div>
 		  
           {hasItems ? (
-            asPills ? (
-              <div className="pill-row">
-                {items.map((item) => (
-				  <span key={item} className="pill">
-					<TypesetText>{item}</TypesetText>
-				  </span>
-				))}
-              </div>
-            ) : (
-              <ul>
-                {items.map((item) => (
-				  <li key={item}>
-					<TypesetText>{item}</TypesetText>
-				  </li>
-				))}
-              </ul>
-            )
-          ) : (
-            <p className="muted">None detected yet.</p>
-          )}
+			  field === "keyNotation" ? (
+				<div className="key-notation-list">
+				  {items.map((item) => (
+					<KeyNotationItem key={item} item={item} />
+				  ))}
+				</div>
+			  ) : asPills ? (
+				<div className="pill-row">
+				  {items.map((item) => (
+					<span key={item} className="pill">
+					  <TypesetText>{item}</TypesetText>
+					</span>
+				  ))}
+				</div>
+			  ) : (
+				<ul>
+				  {items.map((item) => (
+					<li key={item}>
+					  <TypesetText>{item}</TypesetText>
+					</li>
+				  ))}
+				</ul>
+			  )
+			) : (
+			  <p className="muted">None detected yet.</p>
+			)
+		  }
+
 
           <div className="field-edit-footer">
             <button
