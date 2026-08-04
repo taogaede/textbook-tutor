@@ -99,13 +99,12 @@ function fallbackTutor({ concept, workspace, userMessage, mode, chunks }) {
 function extractJsonFromModelText(text) {
   const trimmed = String(text || "").trim();
 
-  // Handles ```json ... ``` or ``` ... ``` wrappers.
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+
   if (fenced?.[1]) {
     return fenced[1].trim();
   }
 
-  // Handles surrounding prose before or after JSON.
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
 
@@ -116,62 +115,69 @@ function extractJsonFromModelText(text) {
   return trimmed;
 }
 
+function repairInvalidJsonBackslashes(jsonText) {
+  return String(jsonText)
+    // Valid JSON escapes are: \" \\ \/ \b \f \n \r \t \uXXXX
+    // This doubles TeX-style backslashes such as \ker, \alpha, \(, \).
+    .replace(/\\(?!["\\/bfnrtu])/g, "\\\\")
+    // Remove raw control characters.
+    .replace(/[\u0000-\u001F]+/g, " ");
+}
+
+function extractTextFieldFallback(content) {
+  const raw = String(content || "");
+
+  const textMatch = raw.match(/"text"\s*:\s*"([\s\S]*?)"\s*,\s*"citations"/);
+
+  if (!textMatch?.[1]) {
+    return null;
+  }
+
+  return textMatch[1]
+    .replace(/\\"/g, '"')
+    .replace(/\\n/g, "\n")
+    .replace(/\\\\/g, "\\")
+    .trim();
+}
+
 function parseTutorJson(content, fallbackCitations) {
   const candidate = extractJsonFromModelText(content);
 
-  try {
-    const parsed = JSON.parse(candidate);
+  let parsed = null;
 
-    return {
-      kind: parsed.kind || "Socratic response",
-      text: parsed.text || content,
-      citations: Array.isArray(parsed.citations) ? parsed.citations : fallbackCitations,
-    };
+  try {
+    parsed = JSON.parse(candidate);
   } catch {
-    return {
-      kind: "Socratic response",
-      text: content,
-      citations: fallbackCitations,
-    };
-  }
-}
-
-function extractJsonObject(text) {
-  const raw = String(text || "").trim();
-
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenced?.[1]) {
-    return fenced[1].trim();
+    try {
+      parsed = JSON.parse(repairInvalidJsonBackslashes(candidate));
+    } catch {
+      parsed = null;
+    }
   }
 
-  const firstBrace = raw.indexOf("{");
-  const lastBrace = raw.lastIndexOf("}");
-
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    return raw.slice(firstBrace, lastBrace + 1);
-  }
-
-  return raw;
-}
-
-function parseTutorResponse(content, fallbackCitations) {
-  const candidate = extractJsonObject(content);
-
-  try {
-    const parsed = JSON.parse(candidate);
-
+  if (parsed && typeof parsed === "object") {
     return {
       kind: typeof parsed.kind === "string" ? parsed.kind : "Socratic response",
-      text: typeof parsed.text === "string" ? parsed.text : content,
+      text: typeof parsed.text === "string" ? parsed.text : String(content || ""),
       citations: Array.isArray(parsed.citations) ? parsed.citations : fallbackCitations,
     };
-  } catch {
+  }
+
+  const extractedText = extractTextFieldFallback(content);
+
+  if (extractedText) {
     return {
       kind: "Socratic response",
-      text: content,
+      text: extractedText,
       citations: fallbackCitations,
     };
   }
+
+  return {
+    kind: "Socratic response",
+    text: String(content || ""),
+    citations: fallbackCitations,
+  };
 }
 
 async function callOpenAICompatible({ concept, workspace, userMessage, mode, chunks }) {
@@ -235,6 +241,29 @@ async function callOpenAICompatible({ concept, workspace, userMessage, mode, chu
 	10. Maintain a clear distinction between textbook-grounded content and general background.
 		If you add background knowledge not explicitly present in the retrieved sources, label it as general background and keep it subordinate to the textbook's presentation.
 
+	Understanding assessment:
+
+	You must evaluate the student's workspace as evidence of their current understanding of the selected concept.
+
+	If the workspace shows strong understanding, explicitly tell the student that they appear to understand the concept well. Only do this when there is clear evidence that the student:
+	- identifies the main mathematical objects involved,
+	- states the relevant definition, condition, theorem, or claim accurately,
+	- uses terminology consistently with the textbook,
+	- gives or discusses an appropriate example, non-example, proof idea, or consequence when relevant,
+	- and does not show a major misconception.
+
+	When understanding appears strong:
+	- Set "kind" to "Understanding seems strong" or "Check understanding".
+	- Begin the "text" field with a clear but measured affirmation, such as: "You appear to understand this concept well."
+	- Briefly name the specific evidence from the student's workspace.
+	- Then ask one deeper follow-up question, boundary-case question, or transfer question.
+
+	Do not say the student understands well if the workspace merely copies isolated phrases from the textbook, is too vague, omits the central condition, confuses examples with definitions, or contains a serious mathematical error.
+
+	If the workspace is partially correct but incomplete, say what seems correct and identify the next gap to address.
+
+	If the workspace is empty or too short to assess, ask the student for a more specific attempt rather than judging their understanding.
+
 	Response format requirements:
 
 	Return JSON only. Do not include markdown fences. Do not include commentary outside the JSON.
@@ -242,7 +271,7 @@ async function callOpenAICompatible({ concept, workspace, userMessage, mode, chu
 	Use exactly this schema:
 
 	{
-	  "kind": "Socratic prompt | Hint | Diagnosis | Clarification | Check understanding | Summary after attempt",
+	  "kind": "Socratic prompt | Hint | Diagnosis | Clarification | Check understanding | Understanding seems strong | Summary after attempt",
 	  "text": "The tutor response shown to the student.",
 	  "citations": ["source reference strings"]
 	}
@@ -313,12 +342,21 @@ async function callOpenAICompatible({ concept, workspace, userMessage, mode, chu
 
 	Retrieved sources:
 	${context}
+	
+	Understanding-assessment instruction:
+	Use the student's workspace as evidence of their current understanding.
+
+	If the workspace demonstrates strong understanding of the selected concept, say so explicitly and explain briefly what the student got right. Then ask one deeper follow-up question.
+
+	If the workspace is only partially correct, identify what is correct and what gap remains.
+
+	If the workspace is empty, vague, or contains a serious misconception, do not say the student understands the concept well.
 
 	Return JSON only. Do not use markdown fences.
 
 	Use this exact schema:
 	{
-	  "kind": "Socratic prompt | Hint | Diagnosis | Clarification | Check understanding",
+	  "kind": "Socratic prompt | Hint | Diagnosis | Clarification | Check understanding | Understanding seems strong | Summary after attempt",
 	  "text": "The message to display to the student. This must be plain text, not JSON.",
 	  "citations": ["source reference strings"]
 	}

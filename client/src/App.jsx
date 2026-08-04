@@ -218,37 +218,72 @@ function normalizeTutorMessageText(text) {
 
   if (!raw) return "";
 
-  // Handles ```json ... ``` wrappers.
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1]?.trim() || raw;
+  function extractJsonCandidate(value) {
+    const trimmed = String(value || "").trim();
 
-  // Try direct JSON parse.
-  try {
-    const parsed = JSON.parse(candidate);
-
-    if (parsed && typeof parsed.text === "string") {
-      return parsed.text;
+    // Handles ```json ... ``` or ``` ... ``` wrappers.
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+      return fenced[1].trim();
     }
-  } catch {
-    // Continue to brace extraction.
+
+    // Handles surrounding prose before or after JSON.
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      return trimmed.slice(firstBrace, lastBrace + 1);
+    }
+
+    return trimmed;
   }
 
-  // Handles cases where the model returned prose around the JSON object.
-  const firstBrace = candidate.indexOf("{");
-  const lastBrace = candidate.lastIndexOf("}");
+  function repairInvalidJsonBackslashes(value) {
+    return String(value)
+      // Valid JSON escapes are: \" \\ \/ \b \f \n \r \t \uXXXX
+      // This doubles TeX-style backslashes such as \ker, \alpha, \(, \).
+      .replace(/\\(?!["\\/bfnrtu])/g, "\\\\")
+      // Remove raw control characters.
+      .replace(/[\u0000-\u001F]+/g, " ");
+  }
 
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    const possibleJson = candidate.slice(firstBrace, lastBrace + 1);
+  function tryParseTutorObject(value) {
+    const candidate = extractJsonCandidate(value);
 
     try {
-      const parsed = JSON.parse(possibleJson);
-
-      if (parsed && typeof parsed.text === "string") {
-        return parsed.text;
-      }
+      return JSON.parse(candidate);
     } catch {
-      // Fall through.
+      // Continue.
     }
+
+    try {
+      return JSON.parse(repairInvalidJsonBackslashes(candidate));
+    } catch {
+      return null;
+    }
+  }
+
+  const parsed = tryParseTutorObject(raw);
+
+  if (parsed && typeof parsed.text === "string") {
+    return parsed.text;
+  }
+
+  // Last-resort extraction for JSON-like strings where JSON.parse still fails.
+  // This handles cases like:
+  // {
+  //   "kind": "...",
+  //   "text": "actual message",
+  //   "citations": [...]
+  // }
+  const textFieldMatch = raw.match(/"text"\s*:\s*"([\s\S]*?)"\s*,\s*"citations"/);
+
+  if (textFieldMatch?.[1]) {
+    return textFieldMatch[1]
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\\\\/g, "\\")
+      .trim();
   }
 
   return raw;
