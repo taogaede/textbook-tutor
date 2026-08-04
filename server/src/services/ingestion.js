@@ -343,6 +343,30 @@ function extractMathJaxMetadata(text, originalName = "") {
   };
 }
 
+function extractTexBodyForIngestion(text, originalName = "") {
+  const isTexFile = String(originalName || "").toLowerCase().endsWith(".tex");
+  const raw = String(text || "");
+
+  if (!isTexFile) {
+    return raw;
+  }
+
+  const beginDocument = raw.indexOf("\\begin{document}");
+
+  let body =
+    beginDocument === -1
+      ? raw
+      : raw.slice(beginDocument + "\\begin{document}".length);
+
+  const endDocument = body.lastIndexOf("\\end{document}");
+
+  if (endDocument !== -1) {
+    body = body.slice(0, endDocument);
+  }
+
+  return body.trim();
+}
+
 function detectSections(text) {
   const texSectionPattern = /\\(chapter|section|subsection|subsubsection)\*?\{([^}]+)\}/g;
   const sections = [];
@@ -546,6 +570,560 @@ function splitTextForLLM(text, sections) {
   }
 
   return blocks;
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  const safeItems = Array.isArray(items) ? items : [];
+  const safeSize = Math.max(1, Number(size) || 1);
+
+  for (let i = 0; i < safeItems.length; i += safeSize) {
+    chunks.push(safeItems.slice(i, i + safeSize));
+  }
+
+  return chunks;
+}
+
+function sourceEvidenceChunks(text, sections, maxChunkSize = 2600) {
+  const chunks = [];
+  let chunkNumber = 1;
+
+  function sectionForOffset(offset) {
+    return findSectionForIndex(sections, offset);
+  }
+
+  const normalized = String(text || "");
+  const paragraphs = normalized
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+
+  let current = "";
+  let currentStart = 0;
+
+  for (const paragraph of paragraphs) {
+    const paragraphIndex = normalized.indexOf(paragraph, currentStart);
+    const startIndex = paragraphIndex === -1 ? currentStart : paragraphIndex;
+
+    if ((current + "\n\n" + paragraph).length > maxChunkSize && current.trim()) {
+      const section = sectionForOffset(currentStart);
+
+      chunks.push({
+        id: `source-${String(chunkNumber++).padStart(4, "0")}`,
+        sectionTitle: section?.title || "Extracted Text",
+        sectionLevel: section?.level || "section",
+        index: currentStart,
+        content: cleanTeXForDisplay(current).slice(0, maxChunkSize + 500),
+      });
+
+      current = paragraph;
+      currentStart = startIndex;
+    } else {
+      if (!current) {
+        currentStart = startIndex;
+      }
+
+      current = current ? `${current}\n\n${paragraph}` : paragraph;
+    }
+  }
+
+  if (current.trim()) {
+    const section = sectionForOffset(currentStart);
+
+    chunks.push({
+      id: `source-${String(chunkNumber++).padStart(4, "0")}`,
+      sectionTitle: section?.title || "Extracted Text",
+      sectionLevel: section?.level || "section",
+      index: currentStart,
+      content: cleanTeXForDisplay(current).slice(0, maxChunkSize + 500),
+    });
+  }
+
+  return chunks;
+}
+
+const canonicalConceptDiscoverySystemPrompt = `
+You are an expert mathematics educator building a conceptual mind map from a textbook.
+
+Your task is to identify canonical mathematical concepts that should become concept cards in a learning app. Do not merely extract the local order of the textbook. Instead, identify concepts that represent important mathematical ideas across the whole text.
+
+Return JSON only. Do not include markdown. Do not include commentary outside the JSON.
+
+Use exactly this schema:
+
+{
+  "canonicalConcepts": [
+    {
+      "title": "string",
+      "type": "Definition | Theorem | Lemma | Proposition | Corollary | Example | Exercise | Question | Concept | Technique | Proof Strategy | Notation | Assumption",
+      "hierarchyPath": ["string"],
+      "aliases": ["string"],
+      "conceptualRole": "string",
+      "searchTerms": ["string"],
+      "relatedConceptTitles": ["string"],
+      "references": ["string"]
+    }
+  ]
+}
+
+Rules:
+- Identify canonical concepts, not every local mention.
+- Prefer concepts that a student would intentionally select in a conceptual navigator.
+- Organize concepts by mathematical meaning, not by page, chapter, section, or local order.
+- Good hierarchy labels include mathematical objects, structures, maps, invariants, theorem families, proof techniques, examples, notation families, and applications.
+- A concept about vector spaces should be grouped conceptually with vector spaces, subspaces, bases, dimension, linear maps, quotient spaces, and related structure when appropriate.
+- A concept about kernels should be grouped with linear maps, image, rank-nullity, and related ideas when appropriate.
+- A concept about bases should be grouped with span, linear independence, coordinates, and dimension when appropriate.
+- hierarchyPath should contain 1 to 4 labels.
+- Do not include the concept title itself as the final hierarchyPath label unless it is genuinely a broad category.
+- aliases should include textbook terminology and common alternate names.
+- searchTerms should include words, phrases, and notation useful for finding source evidence for this concept.
+- references should include local section titles, theorem labels, definition labels, or nearby headings when available.
+- Preserve TeX notation when useful.
+- Because this is JSON, every TeX backslash must be escaped as a double backslash.
+- Return strictly valid JSON parseable by JSON.parse.
+`;
+
+function sourceChunkSummaryForDiscovery(chunk) {
+  return {
+    id: chunk.id,
+    sectionTitle: chunk.sectionTitle,
+    sectionLevel: chunk.sectionLevel,
+    content: String(chunk.content || "").slice(0, 1800),
+  };
+}
+
+function looksLikeTexMacroArtifact(value) {
+  const compact = String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+  return (
+    compact.includes("@ifstar") ||
+    compact.includes("ifstarstar") ||
+    compact.includes("sectionboldsection") ||
+    compact.includes("documentclass") ||
+    compact.includes("usepackage") ||
+    compact.includes("newcommand") ||
+    compact.includes("renewcommand") ||
+    compact.includes("declaremathoperator")
+  );
+}
+
+function normalizeHierarchyPathForConceptMap(value, fallback = ["Concept Map"]) {
+  const path = Array.isArray(value)
+    ? value
+        .map(String)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item) => !looksLikeTexMacroArtifact(item))
+        .slice(0, 4)
+    : [];
+
+  return path.length > 0 ? path : fallback;
+}
+
+function normalizeCanonicalConcept(raw, number) {
+  const title = String(raw?.title || `Concept ${number}`).trim();
+
+  if (!title) return null;
+
+  const hierarchyPath = normalizeHierarchyPathForConceptMap(
+    raw?.hierarchyPath,
+    ["Concept Map"]
+  );
+
+  return {
+    inventoryId: `${slugify(title)}-${number}`,
+    title,
+    type: String(raw?.type || "Concept").trim(),
+    hierarchyPath: hierarchyPath.length ? hierarchyPath : ["Concept Map"],
+    aliases: normalizeStringArray(raw?.aliases, 10),
+    conceptualRole: String(raw?.conceptualRole || "").trim().slice(0, 800),
+    searchTerms: normalizeStringArray(raw?.searchTerms, 16),
+    relatedConceptTitles: normalizeStringArray(raw?.relatedConceptTitles, 16),
+    references: normalizeStringArray(raw?.references, 10),
+  };
+}
+
+function dedupeCanonicalConcepts(concepts, limit = 90) {
+  const seen = new Set();
+  const deduped = [];
+
+  for (const concept of concepts) {
+    const key = slugify(concept.title);
+
+    if (!key || seen.has(key)) continue;
+
+    seen.add(key);
+    deduped.push(concept);
+
+    if (deduped.length >= limit) break;
+  }
+
+  return deduped;
+}
+
+async function identifyCanonicalConceptsForChunkBatch({
+  chunkBatch,
+  batchNumber,
+}) {
+  const user = `
+Textbook source excerpts, batch ${batchNumber}:
+${JSON.stringify(chunkBatch.map(sourceChunkSummaryForDiscovery), null, 2).slice(0, 24000)}
+
+Identify canonical concepts represented in this batch. Focus on concepts that should exist in a global concept map, not merely local section order.
+`;
+
+  const response = await callLocalLLM({
+    system: canonicalConceptDiscoverySystemPrompt,
+    user,
+    temperature: 0.1,
+    maxTokens: 5000,
+    jsonMode: true,
+  });
+
+  if (!response) {
+    throw new Error("No LLM is configured for canonical concept discovery.");
+  }
+
+  let parsed;
+
+  try {
+    parsed = parseJsonFromLLM(response);
+  } catch (error) {
+    console.warn(`Initial canonical concept JSON parse failed for batch ${batchNumber}. Asking LLM to repair JSON...`);
+
+    const repaired = await repairJsonWithLLM({
+      brokenJson: response,
+      parseError: error.message,
+    });
+
+    parsed = parseJsonFromLLM(repaired);
+  }
+
+  return Array.isArray(parsed?.canonicalConcepts)
+    ? parsed.canonicalConcepts
+    : [];
+}
+
+async function identifyCanonicalConceptsWithLLM({ chunks }) {
+  const batches = chunkArray(chunks, 12);
+  const candidates = [];
+
+  for (let i = 0; i < batches.length; i++) {
+    try {
+      const rawConcepts = await identifyCanonicalConceptsForChunkBatch({
+        chunkBatch: batches[i],
+        batchNumber: i + 1,
+      });
+
+      for (const raw of rawConcepts) {
+        const normalized = normalizeCanonicalConcept(raw, candidates.length + 1);
+
+        if (normalized) {
+          candidates.push(normalized);
+        }
+      }
+    } catch (error) {
+      console.warn(`Canonical concept discovery failed for batch ${i + 1}:`, error.message);
+    }
+  }
+
+  return dedupeCanonicalConcepts(candidates, 90);
+}
+
+function lowerPlainText(value) {
+  return cleanInlineTeX(value)
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function searchTermsForCanonicalConcept(canonicalConcept) {
+  return [
+    canonicalConcept.title,
+    ...(canonicalConcept.aliases || []),
+    ...(canonicalConcept.searchTerms || []),
+    ...(canonicalConcept.relatedConceptTitles || []),
+  ]
+    .map(String)
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
+function scoreEvidenceChunkForConcept(chunk, canonicalConcept) {
+  const content = lowerPlainText(chunk.content);
+  const sectionTitle = lowerPlainText(chunk.sectionTitle);
+  const terms = searchTermsForCanonicalConcept(canonicalConcept);
+
+  let score = 0;
+
+  for (const term of terms) {
+    const plainTerm = lowerPlainText(term);
+
+    if (!plainTerm || plainTerm.length < 2) continue;
+
+    if (content.includes(plainTerm)) {
+      score += plainTerm.length > 10 ? 5 : 3;
+    }
+
+    if (sectionTitle.includes(plainTerm)) {
+      score += 4;
+    }
+
+    const words = plainTerm
+      .split(/\s+/)
+      .map((word) => word.trim())
+      .filter((word) => word.length > 4);
+
+    for (const word of words) {
+      if (content.includes(word)) {
+        score += 1;
+      }
+    }
+  }
+
+  return score;
+}
+
+function findEvidenceForCanonicalConcept({
+  canonicalConcept,
+  chunks,
+  limit = 10,
+}) {
+  const scored = chunks
+    .map((chunk) => ({
+      chunk,
+      score: scoreEvidenceChunkForConcept(chunk, canonicalConcept),
+    }))
+    .sort((a, b) => b.score - a.score);
+
+  const positive = scored
+    .filter((item) => item.score > 0)
+    .slice(0, limit)
+    .map((item) => item.chunk);
+
+  if (positive.length > 0) {
+    return positive;
+  }
+
+  return chunks.slice(0, Math.min(limit, chunks.length));
+}
+
+const canonicalConceptSynthesisSystemPrompt = `
+You are an expert mathematics educator synthesizing one canonical concept card from textbook evidence.
+
+The concept card should represent the concept globally across the textbook, not merely the first local mention. Use the evidence excerpts to identify the definition, role, examples, notation, relationships, common confusions, and proof ideas.
+
+Return JSON only. Do not include markdown. Do not include commentary outside the JSON.
+
+Use exactly this schema:
+
+{
+  "title": "string",
+  "type": "Definition | Theorem | Lemma | Proposition | Corollary | Example | Exercise | Question | Concept | Technique | Proof Strategy | Notation | Assumption",
+  "hierarchyPath": ["string"],
+  "definition": "string",
+  "statement": "string",
+  "teachingRole": "string",
+  "prerequisites": ["string"],
+  "dependsOnEarlierInExcerpt": ["string"],
+  "examples": ["string"],
+  "nonExamples": ["string"],
+  "commonConfusions": ["string"],
+  "keyNotation": ["string"],
+  "relatedResults": ["string"],
+  "proofIdeas": ["string"],
+  "sourceSummary": "string",
+  "references": ["string"]
+}
+
+Rules:
+- Synthesize a canonical concept card from all provided evidence excerpts.
+- Do not merely summarize one local section unless the concept only appears there.
+- Stay faithful to the textbook evidence.
+- Do not invent unsupported examples, theorems, or definitions.
+- If the evidence includes a formal definition, preserve it accurately.
+- If the evidence spans multiple contexts, explain how the concept develops across those contexts.
+- hierarchyPath should be conceptual, not chapter-based or page-based.
+- Preserve useful TeX notation.
+- keyNotation should contain compact notation snippets when possible.
+- Because this is JSON, every TeX backslash must be escaped as a double backslash.
+- Return strictly valid JSON parseable by JSON.parse.
+- Use empty strings or empty arrays for unsupported fields.
+`;
+
+function normalizeCanonicalConceptCard({
+  raw,
+  canonicalConcept,
+  evidenceChunks,
+  number,
+}) {
+  const title = String(raw?.title || canonicalConcept.title || `Concept ${number}`).trim();
+  const id = `${slugify(title)}-${number}`;
+
+  const hierarchyPath = normalizeHierarchyPathForConceptMap(
+    raw?.hierarchyPath,
+    canonicalConcept.hierarchyPath || ["Concept Map"]
+  );
+
+  const references = normalizeStringArray(raw?.references, 10);
+  const evidenceReferences = evidenceChunks
+    .map((chunk) => chunk.sectionTitle)
+    .filter(Boolean);
+
+  const sourceChunkIds = evidenceChunks.map((chunk) => chunk.id);
+  const sourceSections = Array.from(new Set(evidenceReferences)).slice(0, 12);
+
+  return {
+    id,
+    title,
+    type: String(raw?.type || canonicalConcept.type || "Concept").trim(),
+    section: hierarchyPath[0] || "Concept Map",
+    hierarchyPath: hierarchyPath.length ? hierarchyPath : ["Concept Map"],
+    page: sourceSections[0] || references[0] || "Concept Map",
+    definition: String(raw?.definition || "").trim().slice(0, 2200),
+    statement: String(raw?.statement || "").trim().slice(0, 1800),
+    teachingRole: String(raw?.teachingRole || canonicalConcept.conceptualRole || "").trim().slice(0, 1400),
+    prerequisites: normalizeStringArray(raw?.prerequisites, 12),
+    dependsOnEarlierInExcerpt: normalizeStringArray(raw?.dependsOnEarlierInExcerpt, 12),
+    examples: normalizeStringArray(raw?.examples, 10),
+    nonExamples: normalizeStringArray(raw?.nonExamples, 8),
+    commonConfusions: normalizeStringArray(raw?.commonConfusions, 10),
+    keyNotation: normalizeStringArray(raw?.keyNotation, 12),
+    relatedResults: normalizeStringArray(raw?.relatedResults, 16),
+    proofIdeas: normalizeStringArray(raw?.proofIdeas, 10),
+    sourceSummary: String(raw?.sourceSummary || "").trim().slice(0, 1600),
+    references: references.length > 0
+      ? references
+      : sourceSections.length > 0
+        ? sourceSections
+        : canonicalConcept.references || [],
+    sourceStart: evidenceChunks[0]?.index || 0,
+
+    canonical: true,
+    aliases: canonicalConcept.aliases || [],
+    conceptMapRole: canonicalConcept.conceptualRole || "",
+    sourceChunkIds,
+    sourceSections,
+  };
+}
+
+async function synthesizeCanonicalConceptCardWithLLM({
+  canonicalConcept,
+  evidenceChunks,
+  allCanonicalConcepts,
+  number,
+}) {
+  const user = `
+Canonical concept to synthesize:
+${JSON.stringify(canonicalConcept, null, 2)}
+
+Related canonical concept titles:
+${JSON.stringify(
+  allCanonicalConcepts.map((concept) => ({
+    title: concept.title,
+    type: concept.type,
+    hierarchyPath: concept.hierarchyPath,
+  })),
+  null,
+  2
+).slice(0, 12000)}
+
+Evidence excerpts from across the textbook:
+${JSON.stringify(
+  evidenceChunks.map((chunk) => ({
+    id: chunk.id,
+    sectionTitle: chunk.sectionTitle,
+    sectionLevel: chunk.sectionLevel,
+    content: String(chunk.content || "").slice(0, 2200),
+  })),
+  null,
+  2
+).slice(0, 26000)}
+
+Synthesize one global concept card for this canonical concept.
+`;
+
+  const response = await callLocalLLM({
+    system: canonicalConceptSynthesisSystemPrompt,
+    user,
+    temperature: 0.1,
+    maxTokens: 4200,
+    jsonMode: true,
+  });
+
+  if (!response) {
+    throw new Error("No LLM is configured for canonical concept synthesis.");
+  }
+
+  let parsed;
+
+  try {
+    parsed = parseJsonFromLLM(response);
+  } catch (error) {
+    console.warn(`Initial canonical concept synthesis JSON parse failed for ${canonicalConcept.title}. Asking LLM to repair JSON...`);
+
+    const repaired = await repairJsonWithLLM({
+      brokenJson: response,
+      parseError: error.message,
+    });
+
+    parsed = parseJsonFromLLM(repaired);
+  }
+
+  return normalizeCanonicalConceptCard({
+    raw: parsed,
+    canonicalConcept,
+    evidenceChunks,
+    number,
+  });
+}
+
+async function extractConceptMapWithLLM({ text, sections }) {
+  const evidenceChunks = sourceEvidenceChunks(text, sections);
+
+  if (evidenceChunks.length === 0) {
+    return null;
+  }
+
+  const canonicalConcepts = await identifyCanonicalConceptsWithLLM({
+    chunks: evidenceChunks,
+  });
+
+  if (!canonicalConcepts || canonicalConcepts.length === 0) {
+    return null;
+  }
+
+  const synthesizedConcepts = [];
+
+  for (let i = 0; i < canonicalConcepts.length; i++) {
+    const canonicalConcept = canonicalConcepts[i];
+
+    try {
+      const evidence = findEvidenceForCanonicalConcept({
+        canonicalConcept,
+        chunks: evidenceChunks,
+        limit: 10,
+      });
+
+      const conceptCard = await synthesizeCanonicalConceptCardWithLLM({
+        canonicalConcept,
+        evidenceChunks: evidence,
+        allCanonicalConcepts: canonicalConcepts,
+        number: synthesizedConcepts.length + 1,
+      });
+
+      if (conceptCard.title && conceptCard.definition.length > 20) {
+        synthesizedConcepts.push(conceptCard);
+      }
+    } catch (error) {
+      console.warn(`Canonical concept synthesis failed for ${canonicalConcept.title}:`, error.message);
+    }
+  }
+
+  return synthesizedConcepts.length > 0 ? synthesizedConcepts : null;
 }
 
 function normalizeLLMConcept(raw, fallbackSection, number) {
@@ -1153,23 +1731,41 @@ Regenerate a better concept card for this same concept using the textbook excerp
 }
 
 export async function ingestTextbook({ file, textbookDir }) {
-	const rawText = await extractText(file);
-	const text = cleanText(rawText);
-	if (!text || text.length < 20) throw new Error("Could not extract enough text from the uploaded file.");
+    const rawText = await extractText(file);
+    const fullText = cleanText(rawText);
 
-	const { texPreamble, mathJax } = extractMathJaxMetadata(text, file.originalname);
+    if (!fullText || fullText.length < 20) {
+	  throw new Error("Could not extract enough text from the uploaded file.");
+    }
 
-	const title = titleFromFilename(file.originalname) || "Uploaded textbook";
-	const id = `${slugify(title)}-${crypto.randomBytes(4).toString("hex")}`;
+    const { texPreamble, mathJax } = extractMathJaxMetadata(fullText, file.originalname);
 
-	const sections = detectSections(text);
+    const text = cleanText(extractTexBodyForIngestion(fullText, file.originalname));
 
-	// First try LLM-assisted concept extraction.
-	let concepts = await extractConceptsWithLLM({ text, sections });
+    if (!text || text.length < 20) {
+	  throw new Error("Could not extract enough textbook body text from the uploaded file.");
+    }
+
+    const title = titleFromFilename(file.originalname) || "Uploaded textbook";
+    const id = `${slugify(title)}-${crypto.randomBytes(4).toString("hex")}`;
+    const sections = detectSections(text);
+
+	// First try global concept-map ingestion.
+	// This identifies canonical concepts across the whole textbook,
+	// gathers distributed evidence, and synthesizes concept cards
+	// organized by conceptual hierarchyPath.
+	let concepts = await extractConceptMapWithLLM({ text, sections });
+
+	// Fall back to the original local LLM extraction if global concept-map
+	// ingestion is unavailable or returns weak output.
+	if (!concepts || concepts.length === 0) {
+	  concepts = await extractConceptsWithLLM({ text, sections });
+	}
 
 	// Fall back to rule-based extraction if the LLM is unavailable or returns weak output.
 	if (!concepts || concepts.length === 0) {
 	  const blocks = extractTeXBlocks(text);
+
 	  concepts = blocks.map((block, idx) =>
 		conceptFromBlock(block, idx + 1, findSectionForIndex(sections, block.index))
 	  );
