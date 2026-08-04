@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { MathJax } from "better-react-mathjax";
+import { MathJax, MathJaxContext } from "better-react-mathjax";
 import {
   BookOpen,
   Brain,
@@ -75,7 +75,82 @@ const initialMessages = [
   },
 ];
 
+const defaultMathJaxMacros = {
+  R: "\\mathbb{R}",
+  C: "\\mathbb{C}",
+  Q: "\\mathbb{Q}",
+  Z: "\\mathbb{Z}",
+  N: "\\mathbb{N}",
+  F: "\\mathbb{F}",
 
+  eps: "\\varepsilon",
+  emptyset: "\\varnothing",
+
+  Hom: "\\operatorname{Hom}",
+  End: "\\operatorname{End}",
+  Aut: "\\operatorname{Aut}",
+  Spec: "\\operatorname{Spec}",
+
+  im: "\\operatorname{im}",
+  Image: "\\operatorname{Im}",
+  rank: "\\operatorname{rank}",
+  Span: "\\operatorname{span}",
+  id: "\\operatorname{id}",
+
+  abs: ["\\left|#1\\right|", 1],
+  norm: ["\\left\\|#1\\right\\|", 1],
+  inner: ["\\left\\langle #1,#2\\right\\rangle", 2],
+};
+
+function buildMathJaxConfig(textbookMathJax) {
+  const basePackages = new Set([
+    "ams",
+    "newcommand",
+    "configmacros",
+    "autoload",
+    "noundefined",
+  ]);
+
+  const textbookPackages = textbookMathJax?.packages || [];
+
+  const packages = Array.from(
+    new Set([
+      ...basePackages,
+      ...textbookPackages,
+    ])
+  );
+
+  const extensionLoad = textbookPackages
+    .filter((name) => !basePackages.has(name))
+    .map((name) => `[tex]/${name}`);
+
+  return {
+    loader: {
+      load: extensionLoad,
+    },
+    tex: {
+      inlineMath: [
+        ["\\(", "\\)"],
+        ["$", "$"],
+      ],
+      displayMath: [
+        ["\\[", "\\]"],
+        ["$$", "$$"],
+      ],
+      processEscapes: true,
+      packages: {
+        "[+]": packages,
+      },
+      macros: {
+        ...defaultMathJaxMacros,
+        ...(textbookMathJax?.macros || {}),
+      },
+      environments: {
+        ...(textbookMathJax?.environments || {}),
+      },
+    },
+  };
+}
 
 function isConceptNode(node) {
   if (!node) return false;
@@ -994,6 +1069,17 @@ export default function App() {
   const workspace = workspaceByConcept[activeConceptId] || "";
   const messages = messagesByConcept[selectedId] || initialMessages;
   const learningState = buildLearningState(workspace, selectedConcept);
+  const mathJaxConfig = useMemo(
+    () => buildMathJaxConfig(textbook?.mathJax),
+    [textbook?.mathJax]
+  );
+
+  const mathJaxKey = useMemo(
+    () =>
+      `${textbook?.id || "demo"}-${JSON.stringify(textbook?.mathJax?.macros || {})}-${JSON.stringify(textbook?.mathJax?.packages || [])}`,
+    [textbook?.id, textbook?.mathJax]
+  );
+  
 
   useEffect(() => {
     refreshSavedTextbooks();
@@ -1409,6 +1495,11 @@ async function refreshConceptCard() {
   }
 
   return (
+    <MathJaxContext
+	  key={mathJaxKey}
+	  version={3}
+	  config={mathJaxConfig}
+	>
     <div className="app-shell">
       <header className="topbar">
         <div className="brand-row">
@@ -1455,6 +1546,12 @@ async function refreshConceptCard() {
         <aside className="sidebar card">
           <div className="card-header"><FileText size={18} /> <h2>Concept Navigator</h2></div>
           <p className="muted small">{textbook.title}</p>
+		  
+		  {textbook.mathJax?.unsupportedPackages?.length > 0 && (
+		    <p className="muted small">
+			  Unsupported TeX packages: {textbook.mathJax.unsupportedPackages.join(", ")}
+		    </p>
+		  )}
 		  
 		  <div className="batch-refresh-panel">
 		  <div className="label">Batch refresh</div>
@@ -1593,5 +1690,6 @@ async function refreshConceptCard() {
         </section>
       </main>
     </div>
+	</MathJaxContext>
   );
 }

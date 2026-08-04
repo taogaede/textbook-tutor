@@ -84,6 +84,265 @@ function cleanTeXForDisplay(text) {
   return output;
 }
 
+function extractTexPreamble(text) {
+  const raw = String(text || "");
+  const beginDocument = raw.indexOf("\\begin{document}");
+
+  if (beginDocument === -1) {
+    return "";
+  }
+
+  return raw.slice(0, beginDocument);
+}
+
+function stripTexComments(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line) => {
+      const percentIndex = line.indexOf("%");
+      return percentIndex === -1 ? line : line.slice(0, percentIndex);
+    })
+    .join("\n");
+}
+
+function parseBalancedBraceContent(text, openBraceIndex) {
+  if (text[openBraceIndex] !== "{") return null;
+
+  let depth = 0;
+
+  for (let i = openBraceIndex; i < text.length; i++) {
+    const char = text[i];
+    const previous = i > 0 ? text[i - 1] : "";
+
+    if (char === "{" && previous !== "\\") {
+      depth += 1;
+    }
+
+    if (char === "}" && previous !== "\\") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return {
+          content: text.slice(openBraceIndex + 1, i),
+          endIndex: i + 1,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseNewCommandLike(preamble, commandName) {
+  const macros = {};
+  const marker = `\\${commandName}`;
+  let index = 0;
+
+  while (index < preamble.length) {
+    const start = preamble.indexOf(marker, index);
+
+    if (start === -1) break;
+
+    let cursor = start + marker.length;
+
+    while (/\s/.test(preamble[cursor] || "")) cursor += 1;
+
+    if (preamble[cursor] !== "{") {
+      index = cursor + 1;
+      continue;
+    }
+
+    const nameBlock = parseBalancedBraceContent(preamble, cursor);
+
+    if (!nameBlock) {
+      index = cursor + 1;
+      continue;
+    }
+
+    const macroName = String(nameBlock.content || "").replace(/^\\/, "").trim();
+
+    cursor = nameBlock.endIndex;
+
+    while (/\s/.test(preamble[cursor] || "")) cursor += 1;
+
+    let argCount = 0;
+
+    if (preamble[cursor] === "[") {
+      const close = preamble.indexOf("]", cursor + 1);
+
+      if (close !== -1) {
+        argCount = Number(preamble.slice(cursor + 1, close).trim()) || 0;
+        cursor = close + 1;
+      }
+    }
+
+    while (/\s/.test(preamble[cursor] || "")) cursor += 1;
+
+    if (preamble[cursor] !== "{") {
+      index = cursor + 1;
+      continue;
+    }
+
+    const bodyBlock = parseBalancedBraceContent(preamble, cursor);
+
+    if (!bodyBlock) {
+      index = cursor + 1;
+      continue;
+    }
+
+    if (macroName) {
+      macros[macroName] =
+        argCount > 0
+          ? [bodyBlock.content.trim(), argCount]
+          : bodyBlock.content.trim();
+    }
+
+    index = bodyBlock.endIndex;
+  }
+
+  return macros;
+}
+
+function parseDeclareMathOperator(preamble) {
+  const macros = {};
+  const marker = "\\DeclareMathOperator";
+  let index = 0;
+
+  while (index < preamble.length) {
+    const start = preamble.indexOf(marker, index);
+
+    if (start === -1) break;
+
+    let cursor = start + marker.length;
+
+    while (/\s/.test(preamble[cursor] || "")) cursor += 1;
+
+    if (preamble[cursor] === "*") {
+      cursor += 1;
+      while (/\s/.test(preamble[cursor] || "")) cursor += 1;
+    }
+
+    if (preamble[cursor] !== "{") {
+      index = cursor + 1;
+      continue;
+    }
+
+    const nameBlock = parseBalancedBraceContent(preamble, cursor);
+
+    if (!nameBlock) {
+      index = cursor + 1;
+      continue;
+    }
+
+    const macroName = String(nameBlock.content || "").replace(/^\\/, "").trim();
+
+    cursor = nameBlock.endIndex;
+
+    while (/\s/.test(preamble[cursor] || "")) cursor += 1;
+
+    if (preamble[cursor] !== "{") {
+      index = cursor + 1;
+      continue;
+    }
+
+    const opBlock = parseBalancedBraceContent(preamble, cursor);
+
+    if (!opBlock) {
+      index = cursor + 1;
+      continue;
+    }
+
+    if (macroName) {
+      macros[macroName] = `\\operatorname{${opBlock.content.trim()}}`;
+    }
+
+    index = opBlock.endIndex;
+  }
+
+  return macros;
+}
+
+function extractUsePackages(preamble) {
+  const packages = [];
+  const pattern = /\\usepackage(?:\[[^\]]+\])?\{([^}]+)\}/g;
+  let match;
+
+  while ((match = pattern.exec(preamble))) {
+    const names = String(match[1] || "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    packages.push(...names);
+  }
+
+  return packages;
+}
+
+function mapLatexPackagesToMathJax(packages) {
+  const packageMap = {
+    amsmath: "ams",
+    amssymb: "ams",
+    amsfonts: "ams",
+    mathtools: "mathtools",
+    physics: "physics",
+    cancel: "cancel",
+    braket: "braket",
+    mhchem: "mhchem",
+    color: "color",
+    xcolor: "color",
+    textcomp: "textcomp",
+    upgreek: "upgreek",
+    unicode: "unicode",
+    bbox: "bbox",
+    enclose: "enclose",
+    extpfeil: "extpfeil",
+    gensymb: "gensymb",
+  };
+
+  const supported = [];
+  const unsupported = [];
+
+  for (const latexPackage of packages) {
+    const mapped = packageMap[latexPackage];
+
+    if (mapped) {
+      supported.push(mapped);
+    } else {
+      unsupported.push(latexPackage);
+    }
+  }
+
+  return {
+    packages: Array.from(new Set(supported)),
+    unsupportedPackages: Array.from(new Set(unsupported)),
+  };
+}
+
+function extractMathJaxMetadata(text, originalName = "") {
+  const isTexFile = String(originalName || "").toLowerCase().endsWith(".tex");
+  const texPreamble = isTexFile ? extractTexPreamble(text) : "";
+  const cleanPreamble = stripTexComments(texPreamble);
+
+  const macros = {
+    ...parseNewCommandLike(cleanPreamble, "newcommand"),
+    ...parseNewCommandLike(cleanPreamble, "renewcommand"),
+    ...parseDeclareMathOperator(cleanPreamble),
+  };
+
+  const latexPackages = extractUsePackages(cleanPreamble);
+  const packageInfo = mapLatexPackagesToMathJax(latexPackages);
+
+  return {
+    texPreamble,
+    mathJax: {
+      macros,
+      packages: packageInfo.packages,
+      unsupportedPackages: packageInfo.unsupportedPackages,
+    },
+  };
+}
+
 function detectSections(text) {
   const texSectionPattern = /\\(chapter|section|subsection|subsubsection)\*?\{([^}]+)\}/g;
   const sections = [];
@@ -894,12 +1153,15 @@ Regenerate a better concept card for this same concept using the textbook excerp
 }
 
 export async function ingestTextbook({ file, textbookDir }) {
-  const rawText = await extractText(file);
-  const text = cleanText(rawText);
-  if (!text || text.length < 20) throw new Error("Could not extract enough text from the uploaded file.");
+	const rawText = await extractText(file);
+	const text = cleanText(rawText);
+	if (!text || text.length < 20) throw new Error("Could not extract enough text from the uploaded file.");
 
-  const title = titleFromFilename(file.originalname) || "Uploaded textbook";
-  const id = `${slugify(title)}-${crypto.randomBytes(4).toString("hex")}`;
+	const { texPreamble, mathJax } = extractMathJaxMetadata(text, file.originalname);
+
+	const title = titleFromFilename(file.originalname) || "Uploaded textbook";
+	const id = `${slugify(title)}-${crypto.randomBytes(4).toString("hex")}`;
+
 	const sections = detectSections(text);
 
 	// First try LLM-assisted concept extraction.
@@ -935,11 +1197,13 @@ export async function ingestTextbook({ file, textbookDir }) {
 
 	const chunks = chunkText(text, concepts);
 	const textbook = {
-	  id,
-	  title,
-	  sections: buildConceptHierarchy(concepts),
-	  createdAt: new Date().toISOString(),
-	  originalName: file.originalname,
+		id,
+		title,
+		sections: buildConceptHierarchy(concepts),
+		createdAt: new Date().toISOString(),
+		originalName: file.originalname,
+		texPreamble,
+		mathJax,
 	};
   const saved = { textbook, concepts, chunks };
   const dir = path.join(textbookDir, id);
