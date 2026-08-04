@@ -556,6 +556,115 @@ p { line-height: 1.5; }
   overflow-wrap: anywhere;
 }
 
+.generation-queue-card {
+  margin-top: 14px;
+}
+
+.generation-queue-header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.generation-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.generation-queue-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.generation-queue-item.running {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+
+.generation-queue-item.done {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.generation-queue-item.failed {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.generation-queue-item.cancelled,
+.generation-queue-item.cancelling {
+  border-color: #e5e7eb;
+  background: #f1f5f9;
+}
+
+.generation-queue-main {
+  min-width: 0;
+}
+
+.generation-queue-title {
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.generation-queue-meta {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.generation-queue-error {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #b91c1c;
+  overflow-wrap: anywhere;
+}
+
+.generation-queue-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.generation-status {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.generation-status.queued {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.generation-status.running {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.generation-status.done {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.generation-status.failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.generation-status.cancelled,
+.generation-status.cancelling {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
 
 .workspace-column, .tutor-column { display: grid; gap: 16px; align-content: start; }
 .concept-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 14px; }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MathJax, MathJaxContext } from "better-react-mathjax";
 import {
   BookOpen,
@@ -150,6 +150,34 @@ function buildMathJaxConfig(textbookMathJax) {
       },
     },
   };
+}
+
+const conceptFieldLabels = {
+  title: "Title",
+  type: "Type",
+  page: "Page or source label",
+  definition: "Textbook definition or excerpt",
+  statement: "Statement",
+  teachingRole: "Why this matters",
+  hierarchyPath: "Hierarchy path",
+  prerequisites: "Prerequisites",
+  dependsOnEarlierInExcerpt: "Depends on earlier in this section",
+  keyNotation: "Key notation",
+  examples: "Useful examples",
+  nonExamples: "Non-examples or boundary cases",
+  commonConfusions: "Common confusions",
+  proofIdeas: "Proof ideas",
+  relatedResults: "Related results and nearby concepts",
+  sourceSummary: "How the textbook presents it",
+  references: "References",
+};
+
+function createGenerationJobId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  return `generation-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function isConceptNode(node) {
@@ -807,6 +835,85 @@ function EditableListField({
   );
 }
 
+function GenerationQueuePanel({
+  queue,
+  onCancelGeneration,
+  onClearFinishedGenerations,
+}) {
+  if (!queue.length) return null;
+
+  const finishedCount = queue.filter((job) =>
+    ["done", "failed", "cancelled"].includes(job.status)
+  ).length;
+
+  return (
+    <div className="card generation-queue-card">
+      <div className="card-header generation-queue-header">
+        <div>
+          <h2>Generation Queue</h2>
+          <p className="muted small">
+            Generate requests run one at a time in the background.
+          </p>
+        </div>
+
+        {finishedCount > 0 && (
+          <button
+            className="secondary-button"
+            onClick={onClearFinishedGenerations}
+          >
+            Clear finished
+          </button>
+        )}
+      </div>
+
+      <div className="generation-queue-list">
+        {queue.map((job) => {
+          const canCancel =
+            job.status === "queued" ||
+            job.status === "running" ||
+            job.status === "cancelling";
+
+          return (
+            <div key={job.id} className={`generation-queue-item ${job.status}`}>
+              <div className="generation-queue-main">
+                <div className="generation-queue-title">
+                  {conceptFieldLabels[job.field] || job.field}
+                </div>
+
+                <div className="generation-queue-meta">
+                  {job.conceptTitle}
+                </div>
+
+                {job.error && (
+                  <div className="generation-queue-error">
+                    {job.error}
+                  </div>
+                )}
+              </div>
+
+              <div className="generation-queue-actions">
+                <span className={`generation-status ${job.status}`}>
+                  {job.status}
+                </span>
+
+                {canCancel && (
+                  <button
+                    className="mini-cancel-button"
+                    onClick={() => onCancelGeneration(job.id)}
+                    disabled={job.status === "cancelling"}
+                  >
+                    {job.status === "cancelling" ? "Cancelling..." : "Cancel"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function QualityField({ concept, onRerunQA, assessingQA }) {
   const hasQuality =
     concept.quality ||
@@ -1096,7 +1203,10 @@ export default function App() {
   const [refreshFeedbackByConcept, setRefreshFeedbackByConcept] = useState({});
   const [assessingConceptId, setAssessingConceptId] = useState(null);
   const [savingConceptField, setSavingConceptField] = useState(null);
-  const [generatingConceptField, setGeneratingConceptField] = useState(null);
+  const [generationQueue, setGenerationQueue] = useState([]);
+  const [activeGenerationId, setActiveGenerationId] = useState(null);
+  const activeGenerationAbortRef = useRef(null);
+  const currentTextbookIdRef = useRef(textbook.id);
   const [loadingTutor, setLoadingTutor] = useState(false);
   const [batchRefreshQuality, setBatchRefreshQuality] = useState("2");
   const [batchRefreshFeedback, setBatchRefreshFeedback] = useState("");
@@ -1115,13 +1225,25 @@ export default function App() {
     () => buildMathJaxConfig(textbook?.mathJax),
     [textbook?.mathJax]
   );
+  const activeGenerationJob = generationQueue.find(
+    (job) => job.id === activeGenerationId
+  );
 
+  const activeGeneratingField =
+    activeGenerationJob?.status === "running" &&
+    activeGenerationJob.conceptId === selectedConcept?.id
+      ? activeGenerationJob.field
+      : null;
   const mathJaxKey = useMemo(
     () =>
       `${textbook?.id || "demo"}-${JSON.stringify(textbook?.mathJax?.macros || {})}-${JSON.stringify(textbook?.mathJax?.packages || [])}`,
     [textbook?.id, textbook?.mathJax]
   );
   
+
+  useEffect(() => {
+    currentTextbookIdRef.current = textbook.id;
+  }, [textbook.id]);
 
   useEffect(() => {
     refreshSavedTextbooks();
@@ -1136,6 +1258,8 @@ export default function App() {
 
     loadWorkspaceForConcept(textbook.id, selectedConcept.id);
   }, [textbook?.id, selectedConcept?.id]);
+  
+  
   
   const filteredSections = useMemo(() => {
 	return filterTreeBySearch(textbook.sections || [], search);
@@ -1263,6 +1387,13 @@ async function loadSavedTextbook(textbookId) {
     setWorkspaceByConcept({});
     setMessagesByConcept({});
     setInput("");
+	setGenerationQueue([]);
+	setActiveGenerationId(null);
+
+	if (activeGenerationAbortRef.current?.controller) {
+	  activeGenerationAbortRef.current.controller.abort();
+	  activeGenerationAbortRef.current = null;
+	}
 
     setStatus(
       `Loaded ${data.textbook.title}: ${data.conceptCount} concepts, ${data.chunkCount} chunks.`
@@ -1295,6 +1426,13 @@ async function loadSavedTextbook(textbookId) {
       if (firstConcept) setSelectedId(firstConcept.id);
       setWorkspaceByConcept({});
       setMessagesByConcept({});
+	  setGenerationQueue([]);
+	  setActiveGenerationId(null);
+
+	  if (activeGenerationAbortRef.current?.controller) {
+	    activeGenerationAbortRef.current.controller.abort();
+	    activeGenerationAbortRef.current = null;
+	  }
       setStatus(`Loaded ${data.textbook.title}: ${data.conceptCount} concepts, ${data.chunkCount} chunks.`);
 	  await refreshSavedTextbooks();
     } catch (error) {
@@ -1336,7 +1474,7 @@ async function loadSavedTextbook(textbookId) {
     }
   }
 
-async function generateConceptField(field) {
+function generateConceptField(field) {
   if (!textbook?.id || !selectedConcept?.id) return;
 
   if (textbook.id === "demo") {
@@ -1344,45 +1482,135 @@ async function generateConceptField(field) {
     return;
   }
 
-  setGeneratingConceptField(field);
-  setStatus(`Generating ${field} for ${selectedConcept.title}...`);
+  const job = {
+    id: createGenerationJobId(),
+    textbookId: textbook.id,
+    conceptId: selectedConcept.id,
+    conceptTitle: selectedConcept.title || "Selected concept",
+    field,
+    status: "queued",
+    createdAt: new Date().toISOString(),
+  };
 
-  try {
-    const response = await fetch(
-      `${API_BASE}/api/textbooks/${encodeURIComponent(textbook.id)}/concepts/${encodeURIComponent(selectedConcept.id)}/fields/${encodeURIComponent(field)}/generate`,
-      {
-        method: "POST",
-      }
-    );
+  setGenerationQueue((prev) => [...prev, job]);
 
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-
-    const data = await response.json();
-
-	setTextbook((prev) => {
-	  const baseTextbook = data.textbook || prev;
-
-	  return {
-		...baseTextbook,
-		sections: replaceConceptInTree(
-		  baseTextbook.sections || prev.sections || [],
-		  data.concept
-		),
-	  };
-	});
-
-	setSelectedId(data.concept.id);
-
-	setStatus(`Generated new content for ${field} on ${data.concept.title}.`);
-  } catch (error) {
-    console.error(error);
-    setStatus(`Generate failed: ${error.message}`);
-  } finally {
-    setGeneratingConceptField(null);
-  }
+  setStatus(
+    `Queued generation for ${conceptFieldLabels[field] || field} on ${job.conceptTitle}.`
+  );
 }
+
+useEffect(() => {
+  if (activeGenerationId) return;
+
+  const nextJob = generationQueue.find((job) => job.status === "queued");
+
+  if (!nextJob) return;
+
+  const controller = new AbortController();
+
+  activeGenerationAbortRef.current = {
+    id: nextJob.id,
+    controller,
+  };
+
+  setActiveGenerationId(nextJob.id);
+
+  setGenerationQueue((prev) =>
+    prev.map((job) =>
+      job.id === nextJob.id
+        ? {
+            ...job,
+            status: "running",
+            startedAt: new Date().toISOString(),
+          }
+        : job
+    )
+  );
+
+  setStatus(
+    `Generating ${conceptFieldLabels[nextJob.field] || nextJob.field} for ${nextJob.conceptTitle}...`
+  );
+
+  async function runGenerationJob() {
+    try {
+      const response = await fetch(
+        `${API_BASE}/api/textbooks/${encodeURIComponent(nextJob.textbookId)}/concepts/${encodeURIComponent(nextJob.conceptId)}/fields/${encodeURIComponent(nextJob.field)}/generate`,
+        {
+          method: "POST",
+          signal: controller.signal,
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const data = await response.json();
+
+      if (currentTextbookIdRef.current === data.textbook.id) {
+        setTextbook((prev) => {
+          if (prev.id !== data.textbook.id) return prev;
+
+          const baseTextbook = data.textbook || prev;
+
+          return {
+            ...baseTextbook,
+            sections: replaceConceptInTree(
+              baseTextbook.sections || prev.sections || [],
+              data.concept
+            ),
+          };
+        });
+      }
+
+      setGenerationQueue((prev) =>
+        prev.map((job) =>
+          job.id === nextJob.id
+            ? {
+                ...job,
+                status: "done",
+                finishedAt: new Date().toISOString(),
+                generated: data.generated,
+              }
+            : job
+        )
+      );
+
+      setStatus(
+        `Generated ${conceptFieldLabels[nextJob.field] || nextJob.field} for ${data.concept.title}.`
+      );
+    } catch (error) {
+      const wasAborted = error.name === "AbortError";
+
+      setGenerationQueue((prev) =>
+        prev.map((job) =>
+          job.id === nextJob.id
+            ? {
+                ...job,
+                status: wasAborted ? "cancelled" : "failed",
+                error: wasAborted ? "" : error.message,
+                finishedAt: new Date().toISOString(),
+              }
+            : job
+        )
+      );
+
+      if (wasAborted) {
+        setStatus(
+          `Cancelled generation for ${conceptFieldLabels[nextJob.field] || nextJob.field}.`
+        );
+      } else {
+        console.error(error);
+        setStatus(`Generate failed: ${error.message}`);
+      }
+    } finally {
+      activeGenerationAbortRef.current = null;
+      setActiveGenerationId(null);
+    }
+  }
+
+  runGenerationJob();
+}, [generationQueue, activeGenerationId]);
 
 async function saveConceptField(field, value) {
   if (!textbook?.id || !selectedConcept?.id) return;
@@ -1535,6 +1763,47 @@ async function refreshConceptCard() {
       setStatus(`Save failed: ${error.message}`);
     }
   }
+  
+	  function cancelGenerationJob(jobId) {
+	  const active = activeGenerationAbortRef.current;
+
+	  if (active?.id === jobId) {
+		setGenerationQueue((prev) =>
+		  prev.map((job) =>
+			job.id === jobId
+			  ? {
+				  ...job,
+				  status: "cancelling",
+				}
+			  : job
+		  )
+		);
+
+		active.controller.abort();
+		return;
+	  }
+
+	  setGenerationQueue((prev) =>
+		prev.map((job) =>
+		  job.id === jobId && job.status === "queued"
+			? {
+				...job,
+				status: "cancelled",
+				finishedAt: new Date().toISOString(),
+			  }
+			: job
+		)
+	  );
+	}
+
+	function clearFinishedGenerationJobs() {
+	  setGenerationQueue((prev) =>
+		prev.filter(
+		  (job) => !["done", "failed", "cancelled"].includes(job.status)
+		)
+	  );
+	}
+
 
   return (
     <MathJaxContext
@@ -1681,6 +1950,13 @@ async function refreshConceptCard() {
               placeholder={`Explain ${selectedConcept?.title || "the selected concept"} in your own words...`}
             />
           </div>
+		  
+		  <GenerationQueuePanel
+		    queue={generationQueue}
+			onCancelGeneration={cancelGenerationJob}
+			onClearFinishedGenerations={clearFinishedGenerationJobs}
+		  />
+		  
           <ConceptCard
 			  concept={selectedConcept}
 			  refreshFeedback={
@@ -1698,7 +1974,7 @@ async function refreshConceptCard() {
 			  onSaveField={saveConceptField}
 			  savingField={savingConceptField}
 			  onGenerateField={generateConceptField}
-			  generatingField={generatingConceptField}
+			  generatingField={activeGeneratingField}
 			  onRerunQA={rerunSelectedConceptQA}
 			  assessingQA={assessingConceptId === selectedConcept?.id}
 			/>
