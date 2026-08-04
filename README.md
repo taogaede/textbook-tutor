@@ -41,63 +41,7 @@ The user has access to a saveable "Workspace" window in which they write out the
 ![Alt text](images/tutoring-dynamic-picture-for-readme.png)
 
 
-## Requirements
 
-- Node.js LTS
-- npm
-- An OpenAI-compatible LLM endpoint
-
-For local use, LM Studio works well. Start the LM Studio server and use its local OpenAI-compatible endpoint.
-
-## Setup
-
-Install dependencies from the project root:
-
-```bash
-npm install
-```
-
-Create a server environment file:
-
-```bash
-cp server/.env.example server/.env
-```
-
-Example `.env` for LM Studio:
-
-```env
-OPENAI_BASE_URL=http://localhost:1234/v1
-OPENAI_API_KEY=lm-studio
-
-PORT=3001
-CLIENT_ORIGIN=http://localhost:5173
-```
-
-If you want to pin a specific model, add:
-
-```env
-OPENAI_MODEL=your-model-id
-```
-
-## Run the App
-
-From the project root:
-
-```bash
-npm run dev
-```
-
-Then open:
-
-```text
-http://localhost:5173
-```
-
-The backend runs at:
-
-```text
-http://localhost:3001
-```
 
 ## Basic Workflow
 
@@ -160,3 +104,61 @@ Not well tested.  Works well for my own use so far.  I intend to
 
 - add concept card addition/deletion
 - redo GUI aesthetic and default text.  It is currently a rather "eye-rolling AI generated" style lol.
+
+## Requirements
+
+- Node.js LTS
+- npm
+- An OpenAI-compatible LLM endpoint
+
+For local use, LM Studio works well. Start the LM Studio server and use its local OpenAI-compatible endpoint.
+
+## Setup
+
+Install dependencies from the project root:
+
+```bash
+npm install
+```
+
+Create a server environment file:
+
+```bash
+cp server/.env.example server/.env
+```
+
+Example `.env` for LM Studio:
+
+```env
+OPENAI_BASE_URL=http://localhost:1234/v1
+OPENAI_API_KEY=lm-studio
+
+PORT=3001
+CLIENT_ORIGIN=http://localhost:5173
+```
+
+If you want to pin a specific model, add:
+
+```env
+OPENAI_MODEL=your-model-id
+```
+
+## Run the App
+
+From the project root:
+
+```bash
+npm run dev
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
+
+The backend runs at:
+
+```text
+http://localhost:3001
+```
