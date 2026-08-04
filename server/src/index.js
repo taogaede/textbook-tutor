@@ -11,6 +11,7 @@ import {
   refreshConceptsByQuality,
   updateConceptCardFields,
   rerunConceptQualityAssessment,
+  generateConceptCardField,
 } from "./services/ingestion.js";
 import { makeTutorResponse } from "./services/tutor.js";
 
@@ -205,6 +206,26 @@ app.post("/api/textbooks/:textbookId/concepts/:conceptId/rerun-qa", async (req, 
     next(error);
   }
 });
+
+app.post("/api/textbooks/:textbookId/concepts/:conceptId/fields/:field/generate", async (req, res, next) => {
+  try {
+    const textbookId = safeId(req.params.textbookId);
+    const conceptId = safeId(req.params.conceptId);
+    const field = String(req.params.field || "").trim();
+
+    const result = await generateConceptCardField({
+      textbookDir,
+      textbookId,
+      conceptId,
+      field,
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 app.post("/api/tutor", async (req, res, next) => {
   try {

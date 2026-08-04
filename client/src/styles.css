@@ -487,6 +487,31 @@ p { line-height: 1.5; }
   line-height: 1.5;
 }
 
+.field-generate-top {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 10px;
+}
+
+.mini-generate-button {
+  border: 0;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 999px;
+  padding: 7px 11px;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.mini-generate-button:hover {
+  background: #e0e7ff;
+}
+
+.mini-generate-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .workspace-column, .tutor-column { display: grid; gap: 16px; align-content: start; }
 .concept-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; margin-bottom: 14px; }
 .main-title { font-size: 1.15rem; }

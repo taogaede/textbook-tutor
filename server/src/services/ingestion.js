@@ -1284,3 +1284,316 @@ export async function updateConceptCardFields({
     chunkCount: saved.chunks?.length || 0,
   };
 }
+
+const conceptFieldGenerationSystemPrompt = `
+You are an expert mathematics educator improving one field of a textbook-based concept card.
+
+Your task is to generate new content for exactly one requested concept-card field. The generated content should improve the pedagogical quality of the concept card while remaining faithful to the textbook excerpt.
+
+Return JSON only. Do not include markdown. Do not include commentary outside the JSON.
+
+Use exactly this schema:
+
+{
+  "generatedText": "string",
+  "generatedItems": ["string"]
+}
+
+Rules:
+- Generate only content appropriate for the requested field.
+- Do not repeat content that is already present in the current field.
+- Do not invent unsupported mathematical facts.
+- Use the textbook excerpt as the source of truth.
+- Use the current concept card for context.
+- If the requested field is a list field, use "generatedItems".
+- If the requested field is a text field, use "generatedText".
+- Use empty strings or empty arrays if the source does not support adding useful content.
+- Preserve mathematical notation when useful.
+- Because this is JSON, every TeX backslash must be escaped as a double backslash.
+- Return strictly valid JSON parseable by JSON.parse.
+`;
+
+const editableFieldGenerationConfig = {
+  title: {
+    kind: "string",
+    label: "Title",
+    guidance: "Generate a concise, instructor-quality title for this concept. Only generate a title if the current title is weak, generic, or misleading.",
+  },
+  type: {
+    kind: "string",
+    label: "Type",
+    guidance: "Generate the best instructional type for this card, such as Definition, Theorem, Example, Exercise, Concept, Technique, Proof Strategy, Notation, or Assumption.",
+  },
+  page: {
+    kind: "string",
+    label: "Page or source label",
+    guidance: "Generate a concise source label or local reference if supported by the excerpt.",
+  },
+  definition: {
+    kind: "string",
+    label: "Textbook definition or excerpt",
+    guidance: "Add a faithful mathematical statement, definition, theorem statement, or explanatory excerpt for this concept.",
+  },
+  statement: {
+    kind: "string",
+    label: "Statement",
+    guidance: "Add or improve the formal mathematical statement, preserving hypotheses and conclusion.",
+  },
+  teachingRole: {
+    kind: "string",
+    label: "Why this matters",
+    guidance: "Explain why this concept matters instructionally and how it fits into the textbook's development.",
+  },
+  sourceSummary: {
+    kind: "string",
+    label: "How the textbook presents it",
+    guidance: "Summarize how the textbook presents this concept in the local excerpt.",
+  },
+  hierarchyPath: {
+    kind: "array",
+    label: "Hierarchy path",
+    guidance: "Generate up to 4 hierarchy labels that place the concept in the textbook structure. Do not include the concept title itself.",
+    limit: 4,
+  },
+  prerequisites: {
+    kind: "array",
+    label: "Prerequisites",
+    guidance: "Add prerequisite concepts a student should understand first.",
+  },
+  dependsOnEarlierInExcerpt: {
+    kind: "array",
+    label: "Depends on earlier in this section",
+    guidance: "Add concepts from the local excerpt that this concept depends on.",
+  },
+  keyNotation: {
+    kind: "array",
+    label: "Key notation",
+    guidance: "Add important notation used or introduced by this concept.",
+  },
+  examples: {
+    kind: "array",
+    label: "Useful examples",
+    guidance: "Add examples, applications, or special cases supported by the source excerpt.",
+  },
+  nonExamples: {
+    kind: "array",
+    label: "Non-examples or boundary cases",
+    guidance: "Add non-examples, boundary cases, counterexamples, or failure cases supported by the source excerpt.",
+  },
+  commonConfusions: {
+    kind: "array",
+    label: "Common confusions",
+    guidance: "Add likely student misunderstandings suggested by the source excerpt.",
+  },
+  proofIdeas: {
+    kind: "array",
+    label: "Proof ideas",
+    guidance: "Add proof ideas or proof strategy notes supported by the source excerpt.",
+  },
+  relatedResults: {
+    kind: "array",
+    label: "Related results and nearby concepts",
+    guidance: "Add nearby definitions, theorems, examples, exercises, or concepts connected to this one.",
+  },
+  references: {
+    kind: "array",
+    label: "References",
+    guidance: "Add local source references supported by the excerpt, such as section title, theorem number, definition number, example number, or heading.",
+  },
+};
+
+function appendGeneratedString(currentValue, generatedText) {
+  const current = String(currentValue || "").trim();
+  const generated = String(generatedText || "").trim();
+
+  if (!generated) return current;
+
+  if (!current) return generated;
+
+  if (current.includes(generated)) return current;
+
+  return `${current}\n\n${generated}`;
+}
+
+function appendGeneratedArray(currentItems, generatedItems, limit = 20) {
+  const existing = Array.isArray(currentItems)
+    ? currentItems.map(String).map((item) => item.trim()).filter(Boolean)
+    : [];
+
+  const generated = Array.isArray(generatedItems)
+    ? generatedItems.map(String).map((item) => item.trim()).filter(Boolean)
+    : [];
+
+  const seen = new Set(existing.map((item) => item.toLowerCase()));
+  const combined = [...existing];
+
+  for (const item of generated) {
+    const key = item.toLowerCase();
+
+    if (!seen.has(key)) {
+      combined.push(item);
+      seen.add(key);
+    }
+  }
+
+  return combined.slice(0, limit);
+}
+
+async function generateConceptFieldContentWithLLM({
+  concept,
+  field,
+  fieldConfig,
+  sourceExcerpt,
+}) {
+  const currentValue = concept[field];
+
+  const user = `
+Requested field:
+${field}
+
+Field label:
+${fieldConfig.label}
+
+Field type:
+${fieldConfig.kind}
+
+Field-specific guidance:
+${fieldConfig.guidance}
+
+Current field value:
+${JSON.stringify(currentValue, null, 2)}
+
+Current concept card:
+${JSON.stringify(concept, null, 2)}
+
+Relevant textbook excerpt:
+${String(sourceExcerpt || "").slice(0, 9000)}
+
+Generate new content that can be appended to the requested field.
+`;
+
+  const response = await callLocalLLM({
+    system: conceptFieldGenerationSystemPrompt,
+    user,
+    temperature: 0.2,
+    maxTokens: 1800,
+    jsonMode: true,
+  });
+
+  if (!response) {
+    throw new Error("No LLM is configured for concept field generation.");
+  }
+
+  let parsed;
+
+  try {
+    parsed = parseJsonFromLLM(response);
+  } catch (error) {
+    console.warn(`Initial field generation JSON parse failed for ${concept.title}.${field}. Asking LLM to repair JSON...`);
+
+    const repaired = await repairJsonWithLLM({
+      brokenJson: response,
+      parseError: error.message,
+    });
+
+    parsed = parseJsonFromLLM(repaired);
+  }
+
+  return {
+    generatedText: String(parsed?.generatedText || "").trim(),
+    generatedItems: Array.isArray(parsed?.generatedItems)
+      ? parsed.generatedItems.map(String).map((item) => item.trim()).filter(Boolean)
+      : [],
+  };
+}
+
+export async function generateConceptCardField({
+  textbookDir,
+  textbookId,
+  conceptId,
+  field,
+}) {
+  const fieldConfig = editableFieldGenerationConfig[field];
+
+  if (!fieldConfig) {
+    throw new Error(`Field "${field}" cannot be generated.`);
+  }
+
+  const textbookJsonPath = path.join(textbookDir, textbookId, "textbook.json");
+  const sourceTextPath = path.join(textbookDir, textbookId, "source.txt");
+
+  const saved = JSON.parse(await fs.readFile(textbookJsonPath, "utf8"));
+  const sourceText = await fs.readFile(sourceTextPath, "utf8").catch(() => "");
+
+  const oldConcept = saved.concepts.find((concept) => concept.id === conceptId);
+
+  if (!oldConcept) {
+    throw new Error(`Could not find concept ${conceptId}.`);
+  }
+
+  const sourceExcerpt = getRefreshContext({
+    sourceText,
+    saved,
+    concept: oldConcept,
+  });
+
+  const generated = await generateConceptFieldContentWithLLM({
+    concept: oldConcept,
+    field,
+    fieldConfig,
+    sourceExcerpt,
+  });
+
+  let updatedValue;
+
+  if (fieldConfig.kind === "array") {
+    updatedValue = appendGeneratedArray(
+      oldConcept[field],
+      generated.generatedItems,
+      fieldConfig.limit || 20
+    );
+  } else {
+    updatedValue = appendGeneratedString(
+      oldConcept[field],
+      generated.generatedText
+    );
+  }
+
+  const generatedAt = new Date().toISOString();
+
+  const updatedConcept = {
+    ...oldConcept,
+    [field]: updatedValue,
+    generatedFields: {
+	  ...(oldConcept.generatedFields || {}),
+	  [field]: generatedAt,
+    },
+    editedAt: generatedAt,
+  };
+
+
+
+  if (!updatedConcept.hierarchyPath?.length) {
+    updatedConcept.hierarchyPath = [
+      updatedConcept.section || oldConcept.section || "Extracted Text",
+    ];
+  }
+
+  saved.concepts = saved.concepts.map((concept) =>
+    concept.id === conceptId ? updatedConcept : concept
+  );
+
+  saved.chunks = updateChunksForConcept(saved.chunks, updatedConcept);
+  saved.textbook.sections = buildConceptHierarchy(saved.concepts);
+
+  await fs.writeFile(textbookJsonPath, JSON.stringify(saved, null, 2));
+
+  return {
+    field,
+    generated,
+    concept: updatedConcept,
+    textbook: saved.textbook,
+    conceptCount: saved.concepts.length,
+    chunkCount: saved.chunks?.length || 0,
+  };
+}

@@ -144,6 +144,23 @@ function filterTreeBySearch(nodes, search) {
   return (nodes || []).map(filterNode).filter(Boolean);
 }
 
+function replaceConceptInTree(nodes, updatedConcept) {
+  return (nodes || []).map((node) => {
+    if (isConceptNode(node)) {
+      return node.id === updatedConcept.id
+        ? {
+            ...node,
+            ...updatedConcept,
+          }
+        : node;
+    }
+
+    return {
+      ...node,
+      children: replaceConceptInTree(node.children || [], updatedConcept),
+    };
+  });
+}
 
 function buildLearningState(workspace, concept) {
   const trimmed = workspace.trim();
@@ -482,6 +499,8 @@ function EditableTextField({
   defaultOpen = false,
   onSaveField,
   savingField,
+  onGenerateField,
+  generatingField,
   placeholder = "",
 }) {
   const [editing, setEditing] = useState(false);
@@ -494,6 +513,7 @@ function EditableTextField({
   }, [value, editing]);
 
   const saving = savingField === field;
+  const generating = generatingField === field;
 
   return (
     <CollapsibleField title={title} defaultOpen={defaultOpen}>
@@ -533,6 +553,16 @@ function EditableTextField({
         </>
       ) : (
         <>
+		  <div className="field-generate-top">
+		    <button
+			  className="mini-generate-button"
+			  onClick={() => onGenerateField?.(field)}
+			  disabled={generating}
+		    >
+		  	  {generating ? "Generating..." : "Generate"}
+		    </button>
+		  </div>
+		  
           <TypesetBlock>
 		    {isNonEmptyString(value) ? value : "None detected yet."}
 		  </TypesetBlock>
@@ -558,6 +588,8 @@ function EditableListField({
   defaultOpen = false,
   onSaveField,
   savingField,
+  onGenerateField,
+  generatingField,
   asPills = false,
   placeholder = "One item per line",
 }) {
@@ -571,6 +603,7 @@ function EditableListField({
   }, [items, editing]);
 
   const saving = savingField === field;
+  const generating = generatingField === field;
   const hasItems = isNonEmptyArray(items);
 
   return (
@@ -611,6 +644,16 @@ function EditableListField({
         </>
       ) : (
         <>
+		  <div className="field-generate-top">
+		    <button
+			  className="mini-generate-button"
+			  onClick={() => onGenerateField?.(field)}
+			  disabled={generating}
+		    >
+			  {generating ? "Generating..." : "Generate"}
+		    </button>
+		  </div>
+		  
           {hasItems ? (
             asPills ? (
               <div className="pill-row">
@@ -712,6 +755,8 @@ function ConceptCard({
   refreshing,
   onSaveField,
   savingField,
+  onGenerateField,
+  generatingField,
   onRerunQA,
   assessingQA,
 }) {
@@ -721,7 +766,13 @@ function ConceptCard({
     concept.statement &&
     concept.statement.trim() &&
     concept.statement.trim() !== concept.definition?.trim();
-
+  
+  const fieldActions = {
+  onSaveField,
+  savingField,
+  onGenerateField,
+  generatingField,
+};
   return (
     <div className="card">
       <div className="card-header concept-card-header">
@@ -742,8 +793,7 @@ function ConceptCard({
 		  field="title"
 		  value={concept.title || ""}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  placeholder="Enter the concept title..."
 		/>
 
@@ -752,8 +802,7 @@ function ConceptCard({
 		  field="type"
 		  value={concept.type || ""}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  placeholder="Definition, Theorem, Example, Exercise, Concept, Technique..."
 		/>
 
@@ -762,8 +811,7 @@ function ConceptCard({
 		  field="page"
 		  value={concept.page || ""}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  placeholder="Enter source label, page, section, or reference..."
 		/>
 
@@ -772,8 +820,7 @@ function ConceptCard({
 		  field="definition"
 		  value={concept.definition || ""}
 		  defaultOpen={true}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  placeholder="Enter the textbook-grounded definition or excerpt..."
 		/>
 
@@ -783,8 +830,7 @@ function ConceptCard({
 			field="statement"
 			value={concept.statement || ""}
 			defaultOpen={true}
-			onSaveField={onSaveField}
-			savingField={savingField}
+			{...fieldActions}
 			placeholder="Enter the theorem, proposition, exercise, or question statement..."
 		  />
 		)}
@@ -794,8 +840,7 @@ function ConceptCard({
 		  field="teachingRole"
 		  value={concept.teachingRole || ""}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  placeholder="Explain why this concept matters instructionally..."
 		/>
 
@@ -804,8 +849,7 @@ function ConceptCard({
 		  field="hierarchyPath"
 		  items={concept.hierarchyPath || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  asPills={true}
 		  placeholder="One hierarchy label per line, up to 4 labels"
 		/>
@@ -815,8 +859,7 @@ function ConceptCard({
 		  field="prerequisites"
 		  items={concept.prerequisites || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  asPills={true}
 		/>
 
@@ -825,8 +868,7 @@ function ConceptCard({
 		  field="dependsOnEarlierInExcerpt"
 		  items={concept.dependsOnEarlierInExcerpt || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  asPills={true}
 		/>
 
@@ -835,8 +877,7 @@ function ConceptCard({
 		  field="keyNotation"
 		  items={concept.keyNotation || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  asPills={true}
 		/>
 
@@ -845,8 +886,7 @@ function ConceptCard({
 		  field="examples"
 		  items={concept.examples || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		/>
 
 		<EditableListField
@@ -854,8 +894,7 @@ function ConceptCard({
 		  field="nonExamples"
 		  items={concept.nonExamples || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		/>
 
 		<EditableListField
@@ -863,8 +902,7 @@ function ConceptCard({
 		  field="commonConfusions"
 		  items={concept.commonConfusions || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		/>
 
 		<EditableListField
@@ -872,8 +910,7 @@ function ConceptCard({
 		  field="proofIdeas"
 		  items={concept.proofIdeas || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		/>
 
 		<EditableListField
@@ -881,8 +918,7 @@ function ConceptCard({
 		  field="relatedResults"
 		  items={concept.relatedResults || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		/>
 
 		<EditableTextField
@@ -890,8 +926,7 @@ function ConceptCard({
 		  field="sourceSummary"
 		  value={concept.sourceSummary || ""}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		  placeholder="Summarize how the textbook presents this concept..."
 		/>
 
@@ -900,8 +935,7 @@ function ConceptCard({
 		  field="references"
 		  items={concept.references || []}
 		  defaultOpen={false}
-		  onSaveField={onSaveField}
-		  savingField={savingField}
+		  {...fieldActions}
 		/>
 
         <QualityField
@@ -945,6 +979,7 @@ export default function App() {
   const [refreshFeedbackByConcept, setRefreshFeedbackByConcept] = useState({});
   const [assessingConceptId, setAssessingConceptId] = useState(null);
   const [savingConceptField, setSavingConceptField] = useState(null);
+  const [generatingConceptField, setGeneratingConceptField] = useState(null);
   const [loadingTutor, setLoadingTutor] = useState(false);
   const [batchRefreshQuality, setBatchRefreshQuality] = useState("2");
   const [batchRefreshFeedback, setBatchRefreshFeedback] = useState("");
@@ -1139,6 +1174,54 @@ async function loadSavedTextbook(textbookId) {
     }
   }
 
+async function generateConceptField(field) {
+  if (!textbook?.id || !selectedConcept?.id) return;
+
+  if (textbook.id === "demo") {
+    setStatus("Demo concepts cannot generate fields. Upload or load a textbook first.");
+    return;
+  }
+
+  setGeneratingConceptField(field);
+  setStatus(`Generating ${field} for ${selectedConcept.title}...`);
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/textbooks/${encodeURIComponent(textbook.id)}/concepts/${encodeURIComponent(selectedConcept.id)}/fields/${encodeURIComponent(field)}/generate`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    const data = await response.json();
+
+	setTextbook((prev) => {
+	  const baseTextbook = data.textbook || prev;
+
+	  return {
+		...baseTextbook,
+		sections: replaceConceptInTree(
+		  baseTextbook.sections || prev.sections || [],
+		  data.concept
+		),
+	  };
+	});
+
+	setSelectedId(data.concept.id);
+
+	setStatus(`Generated new content for ${field} on ${data.concept.title}.`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Generate failed: ${error.message}`);
+  } finally {
+    setGeneratingConceptField(null);
+  }
+}
+
 async function saveConceptField(field, value) {
   if (!textbook?.id || !selectedConcept?.id) return;
 
@@ -1158,8 +1241,8 @@ async function saveConceptField(field, value) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           updates: {
-            value,
-          },
+		    [field]: value,
+		  },
         }),
       }
     );
@@ -1436,6 +1519,8 @@ async function refreshConceptCard() {
 			  refreshing={refreshingConceptId === selectedConcept?.id}
 			  onSaveField={saveConceptField}
 			  savingField={savingConceptField}
+			  onGenerateField={generateConceptField}
+			  generatingField={generatingConceptField}
 			  onRerunQA={rerunSelectedConceptQA}
 			  assessingQA={assessingConceptId === selectedConcept?.id}
 			/>
