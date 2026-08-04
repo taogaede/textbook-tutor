@@ -15,8 +15,3 @@ dist/
 client/dist/
 
 Thumbs.db
-
-hefferon-linear-algebra-work/
-hefferon-linear-algebra-single.tex
-make_hefferon_single_tex.ps1
-textbook-tutor-full.zip
