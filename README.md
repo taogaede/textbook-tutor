@@ -36,7 +36,7 @@ The user selects a concept card from the concept hierarchy.  Each concept card h
 - Concept card quality 
 - Refresh feedback 
 
-The user has access to a saveable "Workspace" window in which they write out their understanding of the concept, and a "Tutor panel" in which they directly interact with the tutor-LLM.  The user can click a "Check understanding" button to cause the tutor-LLM to evaluate the content of the Workspace relative to its interpretation of the understanding of the concept intended by the original math text.  The tutor-LLM proceeds in a socratic style and encourages the user to develop their understanding in the Workspace.
+The user has access to a saveable "Workspace" window in which they write out their understanding of the concept, and a "Tutor panel" in which they directly interact with the tutor-LLM.  The user can click a "Check understanding" button to cause the tutor-LLM to evaluate the content of the Workspace relative to its interpretation of the understanding of the concept intended by the original math text and the concept card.  The tutor-LLM proceeds in a socratic style and encourages the user to develop their understanding in the Workspace.
 
 ![Alt text](images/tutoring-dynamic-picture-for-readme.png)
 
@@ -103,7 +103,7 @@ The app can reload previously ingested textbooks from the saved textbook selecto
 Not well tested.  Works well for my own use so far.  I intend to
 
 - add concept card addition/deletion
-- redo GUI aesthetic and default text.  It is currently a rather "eye-rolling AI generated" style lol.
+- redo GUI aesthetic and default text.  It is currently a rather "eye-rolling AI generated" style.
 
 ## Requirements
 
