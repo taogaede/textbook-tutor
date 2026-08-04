@@ -221,6 +221,7 @@ async function callOpenAICompatible({ concept, workspace, userMessage, mode, chu
 
 	6. Prefer mathematical precision.
 	   Use definitions carefully. Distinguish examples from definitions, intuition from proof, hypotheses from conclusions, and necessary conditions from sufficient conditions. If a statement depends on assumptions, name those assumptions.
+	   Preserve mathematical notation from the retrieved textbook sources when it helps clarity. Use TeX delimiters for math: "\\(...\\)" for inline math and "\\[...\\]" for display math. Because the response is JSON, every TeX backslash must be escaped as a double backslash in the JSON output. Do not rewrite precise mathematical notation into vague prose when the notation is important.
 
 	7. Encourage active reconstruction.
 	   When possible, ask the student to:
@@ -277,6 +278,8 @@ async function callOpenAICompatible({ concept, workspace, userMessage, mode, chu
 	}
 
 	The "text" field must contain only the message to the student. Do not put JSON inside the "text" field.
+
+	If the "text" field contains TeX notation, every TeX backslash must be escaped as a double backslash so the entire response remains valid JSON.
 
 	The response should usually be concise but substantive. Aim for one focused tutoring move per response, rather than a long lecture.
 
@@ -357,7 +360,7 @@ async function callOpenAICompatible({ concept, workspace, userMessage, mode, chu
 	Use this exact schema:
 	{
 	  "kind": "Socratic prompt | Hint | Diagnosis | Clarification | Check understanding | Understanding seems strong | Summary after attempt",
-	  "text": "The message to display to the student. This must be plain text, not JSON.",
+	  "text": "The message to display to the student. This must be plain text, not JSON. Use JSON-escaped TeX notation when mathematical notation is important.",
 	  "citations": ["source reference strings"]
 	}
 

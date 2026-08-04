@@ -40,7 +40,12 @@ function extractTeXBlocks(text) {
   const envPattern = /\\begin\{(definition|theorem|proposition|lemma|corollary|example|exercise|ex|question|eg|remark)\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{\1\}/gi;
   let match;
   while ((match = envPattern.exec(text))) {
-    blocks.push({ type: match[1], content: cleanInlineTeX(match[2]), index: match.index });
+    blocks.push({
+	  type: match[1],
+	  content: cleanTeXForDisplay(match[2]),
+	  plainContent: cleanInlineTeX(match[2]),
+	  index: match.index,
+	});
   }
   return blocks;
 }
@@ -57,6 +62,26 @@ function cleanInlineTeX(text) {
     .replace(/\\/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function cleanTeXForDisplay(text) {
+  let output = String(text || "")
+    .split("\n")
+    .map((line) => {
+      const percentIndex = line.indexOf("%");
+      return percentIndex === -1 ? line : line.slice(0, percentIndex);
+    })
+    .join("\n")
+    .replace(/\\label\{[^}]+\}/g, "")
+    .replace(/\\cite\{[^}]+\}/g, "")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+
+  while (output.includes("\n\n\n")) {
+    output = output.replaceAll("\n\n\n", "\n\n");
+  }
+
+  return output;
 }
 
 function detectSections(text) {
@@ -100,9 +125,9 @@ function sentenceTitle(content, fallback) {
 
 function conceptFromBlock(block, number, section) {
   const type = block.type.charAt(0).toUpperCase() + block.type.slice(1).toLowerCase();
-  const inferredTitle = sentenceTitle(block.content, `${type} ${number}`);
+  const inferredTitle = sentenceTitle(block.plainContent || block.content, `${type} ${number}`);
   const id = `${slugify(inferredTitle)}-${number}`;
-  const definition = block.content.slice(0, 900);
+  const definition = block.content.slice(0, 1400);
   return {
 	id,
 	title: inferredTitle,
@@ -123,7 +148,7 @@ function conceptsFromSections(text, sections) {
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
     const next = sections[i + 1]?.index ?? text.length;
-    const body = cleanInlineTeX(text.slice(section.index, next)).slice(0, 900);
+    const body = cleanTeXForDisplay(text.slice(section.index, next)).slice(0, 1400);
     if (body.length < 40) continue;
     concepts.push({
 		id: `${slugify(section.title)}-${i + 1}`,
@@ -200,7 +225,11 @@ function buildConceptHierarchy(concepts) {
 }
 
 function chunkText(text, concepts) {
-  const paragraphs = text.split(/\n\s*\n/).map((p) => cleanInlineTeX(p)).filter((p) => p.length > 40);
+  const paragraphs = text
+    .split("\n\n")
+    .map((p) => cleanTeXForDisplay(p))
+    .filter((p) => p.length > 40);
+
   const chunks = [];
   let current = "";
   let chunkIndex = 0;
@@ -351,7 +380,7 @@ Rules:
 - Do not use null.
 - Do not use raw line breaks inside strings.
 - Do not use unescaped double quotes inside strings.
-- Avoid raw LaTeX backslashes. Prefer plain English notation.
+- Preserve mathematical notation when it is relevant to the quality assessment, but make sure any TeX backslash in JSON output is escaped as a double backslash.
 `;
 
 function getSourceExcerptForConcept(text, concept, radius = 3500) {
@@ -526,7 +555,7 @@ Field meanings:
 - "examples": Concrete examples, applications, special cases, or illustrative instances from the excerpt.
 - "nonExamples": Non-examples, boundary cases, counterexamples, or failure cases from the excerpt. Leave empty if none are present.
 - "commonConfusions": Likely student misunderstandings suggested by the excerpt. Do not invent elaborate misconceptions, but include natural confusions caused by similar terminology, hidden hypotheses, notation, or nearby concepts.
-- "keyNotation": Important notation introduced or used for this concept. Avoid raw unescaped LaTeX backslashes. Prefer plain English notation when possible.
+- "keyNotation": Important notation introduced or used for this concept. Preserve the textbook's mathematical notation when useful. Use TeX notation when the source uses TeX notation, but ensure every TeX backslash is JSON-escaped as a double backslash.
 - "relatedResults": Named or nearby definitions, theorems, lemmas, examples, exercises, or questions that are connected to this concept.
 - "proofIdeas": If the excerpt includes or sketches a proof, summarize the main proof idea, not every line. If no proof is present, use an empty array.
 - "sourceSummary": Briefly explain how the textbook presents this concept in the excerpt.
@@ -579,9 +608,11 @@ Rules for JSON validity:
 - Every string must be a single-line JSON string.
 - Do not put raw line breaks inside string values.
 - Do not use unescaped double quotes inside string values.
-- Avoid raw LaTeX backslashes. Prefer plain English notation.
-- If mathematical notation is needed, escape every backslash as a double backslash.
-- For example, write "\\\\alpha" instead of "\\alpha", and "\\\\ker T" instead of "\\ker T".
+- Preserve mathematical notation from the textbook whenever it helps fidelity.
+- Use TeX notation inside JSON strings when the textbook uses TeX notation.
+- Because the output is JSON, every TeX backslash must be escaped as a double backslash.
+- Prefer inline math delimiters "\\\\(...\\\\)" and display math delimiters "\\\\[...\\\\]".
+- For example, write "\\\\mathbb{R}" instead of "\mathbb{R}", "\\\\ker T" instead of "\ker T", and "\\\\(x \\\\in V\\\\)" instead of "\(x \in V\)".
 - Use empty arrays for fields with no supported content.
 - Do not omit required fields.
 - Do not use null. Use an empty string or empty array as appropriate.
@@ -709,7 +740,11 @@ Instructions:
 - Use "teachingRole" to explain why this item matters instructionally.
 - Include prerequisites, examples, non-examples, common confusions, notation, related results, and proof ideas only when supported by the source excerpt.
 - Use the textbook's terminology and notation where possible.
-- Avoid raw LaTeX backslashes. Prefer plain English notation. If mathematical notation is needed, escape every backslash as a double backslash.
+- Preserve mathematical notation from the textbook whenever it helps fidelity.
+- Use TeX notation inside JSON strings when the textbook uses TeX notation.
+- Because the output is JSON, every TeX backslash must be escaped as a double backslash.
+- Prefer inline math delimiters "\\\\(...\\\\)" and display math delimiters "\\\\[...\\\\]".
+- For example, write "\\\\mathbb{R}" instead of "\mathbb{R}", "\\\\ker T" instead of "\ker T", and "\\\\(x \\\\in V\\\\)" instead of "\(x \in V\)".
 - Return strictly valid JSON parseable by JSON.parse.
 - Do not use null. Use empty strings or empty arrays.
 - Do not put raw line breaks inside string values.
@@ -888,7 +923,7 @@ export async function ingestTextbook({ file, textbookDir }) {
       type: "Section",
       section: "Extracted Text",
       page: "Extracted Text",
-      definition: cleanInlineTeX(text).slice(0, 900),
+      definition: cleanTeXForDisplay(text).slice(0, 1400),
       prerequisites: [],
       examples: [],
       references: [file.originalname],
@@ -1078,6 +1113,61 @@ export async function refreshConceptsByQuality({
     failedCount: failed.length,
     refreshed,
     failed,
+    conceptCount: saved.concepts.length,
+    chunkCount: saved.chunks?.length || 0,
+  };
+}
+
+export async function rerunConceptQualityAssessment({
+  textbookDir,
+  textbookId,
+  conceptId,
+}) {
+  const textbookJsonPath = path.join(textbookDir, textbookId, "textbook.json");
+  const sourceTextPath = path.join(textbookDir, textbookId, "source.txt");
+
+  const saved = JSON.parse(await fs.readFile(textbookJsonPath, "utf8"));
+  const sourceText = await fs.readFile(sourceTextPath, "utf8").catch(() => "");
+
+  const oldConcept = saved.concepts.find((concept) => concept.id === conceptId);
+
+  if (!oldConcept) {
+    throw new Error(`Could not find concept ${conceptId}.`);
+  }
+
+  const sourceExcerpt = getRefreshContext({
+    sourceText,
+    saved,
+    concept: oldConcept,
+  });
+
+  const qa = await assessConceptQualityWithLLM({
+    concept: oldConcept,
+    sourceExcerpt,
+    siblingConcepts: saved.concepts.filter(
+      (concept) =>
+        concept.id !== conceptId &&
+        concept.section === oldConcept.section
+    ),
+  });
+
+  const updatedConcept = {
+    ...oldConcept,
+    ...qa,
+    qualityAssessedAt: new Date().toISOString(),
+  };
+
+  saved.concepts = saved.concepts.map((concept) =>
+    concept.id === conceptId ? updatedConcept : concept
+  );
+
+  saved.textbook.sections = buildConceptHierarchy(saved.concepts);
+
+  await fs.writeFile(textbookJsonPath, JSON.stringify(saved, null, 2));
+
+  return {
+    concept: updatedConcept,
+    textbook: saved.textbook,
     conceptCount: saved.concepts.length,
     chunkCount: saved.chunks?.length || 0,
   };

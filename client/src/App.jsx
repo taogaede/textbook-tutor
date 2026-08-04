@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { MathJax } from "better-react-mathjax";
 import {
   BookOpen,
   Brain,
@@ -289,6 +290,22 @@ function normalizeTutorMessageText(text) {
   return raw;
 }
 
+function TypesetText({ children, className = "" }) {
+  return (
+    <MathJax dynamic>
+      <span className={className}>{children}</span>
+    </MathJax>
+  );
+}
+
+function TypesetBlock({ children, className = "" }) {
+  return (
+    <MathJax dynamic>
+      <div className={className}>{children}</div>
+    </MathJax>
+  );
+}
+
 function ConceptTree({ sections, selectedId, onSelect }) {
   const [open, setOpen] = useState({});
 
@@ -516,7 +533,9 @@ function EditableTextField({
         </>
       ) : (
         <>
-          <p>{isNonEmptyString(value) ? value : "None detected yet."}</p>
+          <TypesetBlock>
+		    {isNonEmptyString(value) ? value : "None detected yet."}
+		  </TypesetBlock>
 
           <div className="field-edit-footer">
             <button
@@ -596,14 +615,18 @@ function EditableListField({
             asPills ? (
               <div className="pill-row">
                 {items.map((item) => (
-                  <span key={item} className="pill">{item}</span>
-                ))}
+				  <span key={item} className="pill">
+					<TypesetText>{item}</TypesetText>
+				  </span>
+				))}
               </div>
             ) : (
               <ul>
                 {items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
+				  <li key={item}>
+					<TypesetText>{item}</TypesetText>
+				  </li>
+				))}
               </ul>
             )
           ) : (
@@ -624,14 +647,12 @@ function EditableListField({
   );
 }
 
-function QualityField({ concept }) {
+function QualityField({ concept, onRerunQA, assessingQA }) {
   const hasQuality =
     concept.quality ||
     concept.qualityRationale ||
     concept.qualityIssues?.length ||
     concept.qualitySuggestedFix;
-
-  if (!hasQuality) return null;
 
   return (
     <CollapsibleField title="Concept card quality" defaultOpen={false}>
@@ -643,22 +664,42 @@ function QualityField({ concept }) {
       </p>
 
       {concept.qualityRationale && (
-        <p className="quality-rationale">{concept.qualityRationale}</p>
+        <TypesetBlock className="quality-rationale">
+		  {concept.qualityRationale}
+		</TypesetBlock>
       )}
 
       {concept.qualityIssues?.length > 0 && (
         <ul>
           {concept.qualityIssues.map((issue) => (
-            <li key={issue}>{issue}</li>
+            <li key={issue}>
+			  <TypesetText>{issue}</TypesetText>
+			</li>
           ))}
         </ul>
       )}
 
       {concept.qualitySuggestedFix && (
-        <p className="quality-suggested-fix">
-          Suggested fix: {concept.qualitySuggestedFix}
+        <TypesetBlock className="quality-suggested-fix">
+		  {`Suggested fix: ${concept.qualitySuggestedFix}`}
+		</TypesetBlock>
+      )}
+
+      {concept.qualityAssessedAt && (
+        <p className="muted small">
+          Last assessed: {new Date(concept.qualityAssessedAt).toLocaleString()}
         </p>
       )}
+
+      <div className="field-edit-footer">
+        <button
+          className="mini-qa-button"
+          onClick={onRerunQA}
+          disabled={assessingQA}
+        >
+          {assessingQA ? "Re-running QA..." : "Re-run QA"}
+        </button>
+      </div>
     </CollapsibleField>
   );
 }
@@ -671,6 +712,8 @@ function ConceptCard({
   refreshing,
   onSaveField,
   savingField,
+  onRerunQA,
+  assessingQA,
 }) {
   if (!concept) return null;
 
@@ -861,7 +904,11 @@ function ConceptCard({
 		  savingField={savingField}
 		/>
 
-        <QualityField concept={concept} />
+        <QualityField
+		  concept={concept}
+		  onRerunQA={onRerunQA}
+		  assessingQA={assessingQA}
+		/>
 
         <CollapsibleField title="Refresh feedback" defaultOpen={false}>
           <textarea
@@ -896,12 +943,14 @@ export default function App() {
   const [status, setStatus] = useState("Demo mode. Upload a .tex, .txt, or .pdf textbook to use your own material.");
   const [refreshingConceptId, setRefreshingConceptId] = useState(null);
   const [refreshFeedbackByConcept, setRefreshFeedbackByConcept] = useState({});
+  const [assessingConceptId, setAssessingConceptId] = useState(null);
   const [savingConceptField, setSavingConceptField] = useState(null);
   const [loadingTutor, setLoadingTutor] = useState(false);
   const [batchRefreshQuality, setBatchRefreshQuality] = useState("2");
   const [batchRefreshFeedback, setBatchRefreshFeedback] = useState("");
   const [batchRefreshLimit, setBatchRefreshLimit] = useState(50);
   const [batchRefreshing, setBatchRefreshing] = useState(false);
+  
   
 
   const concepts = useMemo(() => flattenConcepts(textbook.sections || []), [textbook]);
@@ -1134,6 +1183,49 @@ async function saveConceptField(field, value) {
   }
 }
 
+async function rerunSelectedConceptQA() {
+  if (!textbook?.id || !selectedConcept?.id) return;
+
+  if (textbook.id === "demo") {
+    setStatus("Demo concepts cannot be reassessed. Upload or load a textbook first.");
+    return;
+  }
+
+  setAssessingConceptId(selectedConcept.id);
+  setStatus(`Re-running QA for ${selectedConcept.title}...`);
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/textbooks/${encodeURIComponent(textbook.id)}/concepts/${encodeURIComponent(selectedConcept.id)}/rerun-qa`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    const data = await response.json();
+
+    setTextbook(data.textbook);
+    setSelectedId(data.concept.id);
+
+    setRefreshFeedbackByConcept((prev) => ({
+      ...prev,
+      [data.concept.id]: buildDefaultRefreshFeedback(data.concept),
+    }));
+
+    setStatus(
+      `QA updated for ${data.concept.title}. Quality: ${data.concept.quality || "unrated"}.`
+    );
+  } catch (error) {
+    console.error(error);
+    setStatus(`QA rerun failed: ${error.message}`);
+  } finally {
+    setAssessingConceptId(null);
+  }
+}
 
 async function refreshConceptCard() {
   if (!textbook?.id || !selectedConcept?.id) return;
@@ -1300,8 +1392,15 @@ async function refreshConceptCard() {
           <div className="card">
             <div className="concept-header">
               <div>
-                <h2 className="main-title">{selectedConcept?.title || "No concept selected"}</h2>
-                <p className="muted">{selectedConcept?.type} · {selectedConcept?.page || selectedConcept?.references?.[0] || "source"}</p>
+                <h2 className="main-title">
+				  <TypesetText>{selectedConcept?.title || "No concept selected"}</TypesetText>
+				</h2>
+				<p className="muted">
+				  <TypesetText>
+					{`${selectedConcept?.type || ""} · ${selectedConcept?.page || selectedConcept?.references?.[0] || "source"}`}
+				  </TypesetText>
+				</p>
+
               </div>
               <div className="button-row">
                 <button className="secondary-button" onClick={saveWorkspace}>Save workspace</button>
@@ -1337,6 +1436,8 @@ async function refreshConceptCard() {
 			  refreshing={refreshingConceptId === selectedConcept?.id}
 			  onSaveField={saveConceptField}
 			  savingField={savingConceptField}
+			  onRerunQA={rerunSelectedConceptQA}
+			  assessingQA={assessingConceptId === selectedConcept?.id}
 			/>
         </section>
 
@@ -1348,7 +1449,9 @@ async function refreshConceptCard() {
               {messages.map((message, index) => (
                 <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
                   {message.kind && <div className="message-kind"><Lightbulb size={13} />{message.kind}</div>}
-                  <p>{normalizeTutorMessageText(message.text)}</p>
+                  <TypesetBlock>
+					{normalizeTutorMessageText(message.text)}
+				  </TypesetBlock>
                   
                 </div>
               ))}

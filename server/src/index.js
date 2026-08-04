@@ -10,6 +10,7 @@ import {
   refreshConceptCard,
   refreshConceptsByQuality,
   updateConceptCardFields,
+  rerunConceptQualityAssessment,
 } from "./services/ingestion.js";
 import { makeTutorResponse } from "./services/tutor.js";
 
@@ -180,6 +181,23 @@ app.patch("/api/textbooks/:textbookId/concepts/:conceptId", async (req, res, nex
       textbookId,
       conceptId,
       updates: req.body?.updates || {},
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/textbooks/:textbookId/concepts/:conceptId/rerun-qa", async (req, res, next) => {
+  try {
+    const textbookId = safeId(req.params.textbookId);
+    const conceptId = safeId(req.params.conceptId);
+
+    const result = await rerunConceptQualityAssessment({
+      textbookDir,
+      textbookId,
+      conceptId,
     });
 
     res.json(result);
