@@ -47,13 +47,14 @@ The user has access to a saveable "Workspace" window in which they write out the
 
 ## Basic Workflow
 
-1. Start your local LLM server.
-2. Run the app with `npm run dev`.
-3. Upload a textbook .tex file.
-4. Wait for ingestion and concept-card QA (this can take a long time depending on your hardware, model choice, and length of .tex file).
-5. Select concepts from the navigator.
-6. Use the workspace to write notes, attempted explanations, examples, or precise confusions.
-7. Ask the tutor for hints, clarification, diagnosis, or understanding checks.
+1. Start your local LLM server (e.g. using LM-studio).
+2. Load your model and make sure the context is at least about 25000 (otherwise some LLM calls might fail).
+3. Run the app with `npm run dev` and navigate to http://localhost:5173/ in your browser.
+4. Upload a .tex or .pdf file.
+5. Wait for ingestion and concept-card QA (this can take a long time depending on your hardware, model choice, and length of .tex file).
+6. Select a concept from the navigator.
+7. Use the workspace to write notes, attempted explanations, examples, or precise confusions about the concept.
+8. Ask the tutor for hints and clarifications in conversation panel, or click the green "Check understanding" box to get feedback from the tutor on your workspace content.
 
 ## Concept Quality
 
