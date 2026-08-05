@@ -63,7 +63,7 @@ Each concept card receives a quality score from the QA-LLM to (1) help the human
 - `2`: possibly not valuable (indicated by silver circle)
 - `1`: probably not valuable (no indicator)
 
-The UI uses these ratings to help identify which concept cards may need review or refresh.
+These ratings help to identify which concept cards may need review or refresh (regeneration).
 
 **Note:** "well-formed" is the label for highest quality, rather than "valuable" because 
 
@@ -85,9 +85,9 @@ This is useful when a card is vague, poorly titled, incorrectly scoped, or missi
 
 ### Batch Refresh
 
-Concepts can also be refreshed in batches by quality rank. For example, you can refresh all concepts with quality `2`, optionally adding feedback that applies to the whole batch.
+Concepts can also be refreshed in batches by quality rank. For example, you can refresh all concepts with quality `2`, optionally adding user feedback that applies to the whole batch.
 
-Use a small batch limit first, because each refreshed concept may require multiple LLM calls.
+You can assign a limit to the number of refreshed cards, because each refreshed concept may require multiple LLM calls, and this might take a long time if all cards are refreshed.
 
 ## Saved Textbooks
 
@@ -103,14 +103,16 @@ The app can reload previously ingested textbooks from the saved textbook selecto
 
 - Ingested textbook data is stored in `server/data/`.
 - Large textbooks may take time to ingest because concept extraction, QA, and refresh operations call the LLM multiple times.
-- The app is an active prototype.
+- The app is an active prototype: you may find bugs, existing features may be overhauled or removed, and new features may be added.
 
 ## Status
 
 Not well tested.  Works well for my own use so far.  I intend to
 
 - add concept card addition/deletion
-- redo GUI aesthetic and default text.  It is currently a rather "eye-rolling AI generated" style.
+- redo GUI aesthetic and default text.  It is currently a rather "eye-rolling AI generated" style, so I'm sorry about that for now!
+- improve system prompts throughout to make all of the LLM calls more effective. 
+- possibly partition the LLM roles much further to allow for creating more specialized system prompts to direct specific generation tasks.  For instance, make it so an "example specialist" generates the examples, rather than the generic educator-LLM.
 
 ## Requirements
 
