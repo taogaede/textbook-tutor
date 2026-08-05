@@ -48,7 +48,7 @@ The user has access to a saveable "Workspace" window in which they write out the
 ## Basic Workflow
 
 1. Start your local LLM server (e.g. using LM-studio).
-2. Load your model and make sure the context is at least about 25000 (otherwise some LLM calls might fail).
+2. Load your model and you probably want the context to be at least about 25000 (otherwise some LLM calls might fail).
 3. Run the app with `npm run dev` and navigate to http://localhost:5173/ in your browser.
 4. Upload a `.tex` or `.pdf` file.
 5. Wait for ingestion and concept-card QA (this can take a long time depending on your hardware, model choice, and length of `.tex` or `.pdf` file).
