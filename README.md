@@ -59,13 +59,13 @@ The user has access to a saveable "Workspace" window in which they write out the
 
 Each concept card receives a quality score:
 
-- `3`: *well-formed* concept card
+- `3`: **well-formed** concept card
 - `2`: possibly not valuable
 - `1`: probably not valuable
 
 The UI uses these ratings to help identify which concept cards may need review or refresh.
 
-*Note:* "well-formed" is the label for highest quality, rather than "valuable" because 
+**Note:** "well-formed" is the label for highest quality, rather than "valuable" because 
 
 1. It's the responsibility of the human educator to make positive value judgements, and 
 2. The QA-LLM exists primarily to flag lack of value and determine concept card cohesiveness with the original text.
