@@ -125,6 +125,8 @@ For local use, LM Studio works well. Start the LM Studio server and use its loca
 
 ## Setup
 
+Install the latest Node.js LTS version from nodejs.org (https://nodejs.org/en/download).
+
 Install dependencies from the project root:
 
 ```bash
