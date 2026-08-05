@@ -107,12 +107,12 @@ The app can reload previously ingested textbooks from the saved textbook selecto
 
 ## Status
 
-Not well tested.  Works well for my own use so far.  I intend to
+Not well tested.  Works well for my own use so far.  I think it has most of the features it needs, and most of the hard work left is in optimizing system prompts.  Next, I intend to
 
 - add concept card addition/deletion
-- redo GUI aesthetic and default text.  It is currently a rather "eye-rolling AI generated" style, so I'm sorry about that for now!
+- redo GUI aesthetic and default text.  It is currently a rather "eye-rollingly AI generated" style (sorry).
 - improve system prompts throughout to make all of the LLM calls more effective. 
-- possibly partition the LLM roles much further to allow for creating more specialized system prompts to direct specific generation tasks.  For instance, make it so an "example specialist" generates the examples, rather than the generic educator-LLM.
+- partition the LLM roles further to allow for creating more specialized system prompts to direct specific generation tasks.  For instance, make it so an "example specialist" generates the examples, rather than the generic educator-LLM.
 
 ## Requirements
 
