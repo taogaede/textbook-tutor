@@ -107,7 +107,7 @@ The app can reload previously ingested textbooks from the saved textbook selecto
 
 ## Status
 
-Not well tested.  Works well for my own use so far.  I think it has most of the features it needs, and most of the hard work left is in optimizing system prompts.  Next, I intend to
+Not well tested.  Works well for my own use so far.  I think it has most of the features it needs, and most of the hard work left is in optimizing system prompts, existing features, and debugging.  Next, I intend to
 
 - add concept card addition/deletion
 - redo GUI aesthetic and default text.  It is currently a rather "eye-rollingly AI generated" style (sorry).
