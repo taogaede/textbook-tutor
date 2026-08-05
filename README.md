@@ -57,11 +57,11 @@ The user has access to a saveable "Workspace" window in which they write out the
 
 ## Concept Quality
 
-Each concept card receives a quality score:
+Each concept card receives a quality score from the QA-LLM to (1) help the human educator assess concept cards and (2) help the student judge which concept cards to focus their learning around:
 
-- `3`: **well-formed** concept card
-- `2`: possibly not valuable
-- `1`: probably not valuable
+- `3`: **well-formed** concept card (indicated by gold circle)
+- `2`: possibly not valuable (indicated by silver circle)
+- `1`: probably not valuable (no indicator)
 
 The UI uses these ratings to help identify which concept cards may need review or refresh.
 
